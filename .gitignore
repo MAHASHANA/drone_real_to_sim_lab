@@ -1,0 +1,49 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments and local env files
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Editor and OS noise
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Runtime captures and large sensor artifacts
+captures/
+data/captures/
+sensors/iphone_lota/captures/
+*.npy
+*.npz
+*.ply
+
+# Backups from removing accidental nested Git repositories
+.git.backup/
+
+# Generated previews/reports
+*.png
+*.jpg
+*.jpeg
+*.html
+
+# Logs
+*.log
+*.jsonl
+
+# Build/package outputs
+build/
+dist/
+*.egg-info/
+
+# Simulation/runtime temp files
+*.tmp
+*.bak

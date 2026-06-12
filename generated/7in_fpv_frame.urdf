@@ -1,0 +1,360 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot name="mark4_7in_frame">
+  <material name="carbon_dark">
+    <color rgba="0.015 0.018 0.020 1" />
+  </material>
+  <material name="carbon_edge">
+    <color rgba="0.08 0.10 0.11 1" />
+  </material>
+  <material name="aluminum">
+    <color rgba="0.55 0.57 0.60 1" />
+  </material>
+  <material name="motor_pad">
+    <color rgba="0.08 0.08 0.08 1" />
+  </material>
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.032" />
+      <inertia ixx="2.40833e-05" ixy="0" ixz="0" iyy="6.00167e-05" iyz="0" izz="8.40667e-05" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.15 0.095 0.0025" />
+      </geometry>
+      <material name="carbon_dark" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.15 0.095 0.0025" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="top_plate">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.018" />
+      <inertia ixx="8.44687e-06" ixy="0" ixz="0" iyy="2.16094e-05" iyz="0" izz="3.00375e-05" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.12 0.075 0.0025" />
+      </geometry>
+      <material name="carbon_edge" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.12 0.075 0.0025" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="top_plate_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="top_plate" />
+    <origin xyz="0 0 0.03" rpy="0 0 0" />
+  </joint>
+  <link name="front_right_arm">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.0155" />
+      <inertia ixx="4.50792e-07" ixy="0" ixz="0" iyy="5.43146e-05" iyz="0" izz="5.47008e-05" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.205 0.018 0.005" />
+      </geometry>
+      <material name="carbon_dark" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.205 0.018 0.005" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="front_right_arm_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="front_right_arm" />
+    <origin xyz="0.04825 0.05575 0" rpy="0 0 0.857389" />
+  </joint>
+  <link name="motor_mount_front_right">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.004" />
+      <inertia ixx="2.94333e-07" ixy="0" ixz="0" iyy="2.94333e-07" iyz="0" izz="5.78e-07" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.017" length="0.004" />
+      </geometry>
+      <material name="motor_pad" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.017" length="0.004" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="motor_mount_front_right_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="motor_mount_front_right" />
+    <origin xyz="0.0965 0.1115 0.0045" rpy="0 0 0" />
+  </joint>
+  <link name="front_left_arm">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.0155" />
+      <inertia ixx="4.50792e-07" ixy="0" ixz="0" iyy="5.43146e-05" iyz="0" izz="5.47008e-05" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.205 0.018 0.005" />
+      </geometry>
+      <material name="carbon_dark" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.205 0.018 0.005" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="front_left_arm_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="front_left_arm" />
+    <origin xyz="-0.04825 0.05575 0" rpy="0 0 2.2842" />
+  </joint>
+  <link name="motor_mount_front_left">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.004" />
+      <inertia ixx="2.94333e-07" ixy="0" ixz="0" iyy="2.94333e-07" iyz="0" izz="5.78e-07" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.017" length="0.004" />
+      </geometry>
+      <material name="motor_pad" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.017" length="0.004" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="motor_mount_front_left_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="motor_mount_front_left" />
+    <origin xyz="-0.0965 0.1115 0.0045" rpy="0 0 0" />
+  </joint>
+  <link name="rear_left_arm">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.0155" />
+      <inertia ixx="4.50792e-07" ixy="0" ixz="0" iyy="5.43146e-05" iyz="0" izz="5.47008e-05" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.205 0.018 0.005" />
+      </geometry>
+      <material name="carbon_dark" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.205 0.018 0.005" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="rear_left_arm_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="rear_left_arm" />
+    <origin xyz="-0.04825 -0.05575 0" rpy="0 0 -2.2842" />
+  </joint>
+  <link name="motor_mount_rear_left">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.004" />
+      <inertia ixx="2.94333e-07" ixy="0" ixz="0" iyy="2.94333e-07" iyz="0" izz="5.78e-07" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.017" length="0.004" />
+      </geometry>
+      <material name="motor_pad" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.017" length="0.004" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="motor_mount_rear_left_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="motor_mount_rear_left" />
+    <origin xyz="-0.0965 -0.1115 0.0045" rpy="0 0 0" />
+  </joint>
+  <link name="rear_right_arm">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.0155" />
+      <inertia ixx="4.50792e-07" ixy="0" ixz="0" iyy="5.43146e-05" iyz="0" izz="5.47008e-05" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.205 0.018 0.005" />
+      </geometry>
+      <material name="carbon_dark" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.205 0.018 0.005" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="rear_right_arm_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="rear_right_arm" />
+    <origin xyz="0.04825 -0.05575 0" rpy="0 0 -0.857389" />
+  </joint>
+  <link name="motor_mount_rear_right">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.004" />
+      <inertia ixx="2.94333e-07" ixy="0" ixz="0" iyy="2.94333e-07" iyz="0" izz="5.78e-07" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.017" length="0.004" />
+      </geometry>
+      <material name="motor_pad" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.017" length="0.004" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="motor_mount_rear_right_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="motor_mount_rear_right" />
+    <origin xyz="0.0965 -0.1115 0.0045" rpy="0 0 0" />
+  </joint>
+  <link name="stack_standoff_rear_left">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.0015" />
+      <inertia ixx="1.14844e-07" ixy="0" ixz="0" iyy="1.14844e-07" iyz="0" izz="4.6875e-09" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.0025" length="0.03" />
+      </geometry>
+      <material name="aluminum" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.0025" length="0.03" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="stack_standoff_rear_left_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="stack_standoff_rear_left" />
+    <origin xyz="-0.01525 -0.01525 0.015" rpy="0 0 0" />
+  </joint>
+  <link name="stack_standoff_front_left">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.0015" />
+      <inertia ixx="1.14844e-07" ixy="0" ixz="0" iyy="1.14844e-07" iyz="0" izz="4.6875e-09" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.0025" length="0.03" />
+      </geometry>
+      <material name="aluminum" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.0025" length="0.03" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="stack_standoff_front_left_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="stack_standoff_front_left" />
+    <origin xyz="-0.01525 0.01525 0.015" rpy="0 0 0" />
+  </joint>
+  <link name="stack_standoff_rear_right">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.0015" />
+      <inertia ixx="1.14844e-07" ixy="0" ixz="0" iyy="1.14844e-07" iyz="0" izz="4.6875e-09" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.0025" length="0.03" />
+      </geometry>
+      <material name="aluminum" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.0025" length="0.03" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="stack_standoff_rear_right_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="stack_standoff_rear_right" />
+    <origin xyz="0.01525 -0.01525 0.015" rpy="0 0 0" />
+  </joint>
+  <link name="stack_standoff_front_right">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="0.0015" />
+      <inertia ixx="1.14844e-07" ixy="0" ixz="0" iyy="1.14844e-07" iyz="0" izz="4.6875e-09" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.0025" length="0.03" />
+      </geometry>
+      <material name="aluminum" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.0025" length="0.03" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="stack_standoff_front_right_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="stack_standoff_front_right" />
+    <origin xyz="0.01525 0.01525 0.015" rpy="0 0 0" />
+  </joint>
+</robot>

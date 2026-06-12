@@ -1,0 +1,32 @@
+{
+  "robot_name": "mark4_7in_frame",
+  "source_note": "Mark4/GEP-Mark4-7 style 7-inch H frame. Published specs commonly list 295 mm diagonal motor distance, 193 x 223 mm motor span/size, and 5 mm arms; plate thickness varies by kit.",
+  "wheelbase_m": 0.295,
+  "motor_span_x_m": 0.193,
+  "motor_span_y_m": 0.223,
+  "arm_length_m": 0.205,
+  "arm_width_m": 0.018,
+  "arm_thickness_m": 0.005,
+  "bottom_plate": {
+    "size_m": [0.150, 0.095, 0.0025],
+    "z_m": 0.000,
+    "mass_kg": 0.032
+  },
+  "top_plate": {
+    "size_m": [0.120, 0.075, 0.0025],
+    "z_m": 0.030,
+    "mass_kg": 0.018
+  },
+  "arm_mass_kg": 0.0155,
+  "motor_mount": {
+    "radius_m": 0.017,
+    "thickness_m": 0.004,
+    "mass_kg": 0.004
+  },
+  "stack_standoff": {
+    "radius_m": 0.0025,
+    "height_m": 0.030,
+    "spacing_m": 0.0305,
+    "mass_kg": 0.0015
+  }
+}

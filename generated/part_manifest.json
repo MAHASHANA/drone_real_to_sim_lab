@@ -1,0 +1,274 @@
+{
+  "parts": [
+    {
+      "name": "bottom_plate",
+      "link": "base_link",
+      "shape": "box",
+      "size_m": [
+        0.15,
+        0.095,
+        0.0025
+      ],
+      "pose_xyz_m": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "pose_rpy_rad": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mass_kg": 0.032
+    },
+    {
+      "name": "top_plate",
+      "link": "top_plate",
+      "shape": "box",
+      "size_m": [
+        0.12,
+        0.075,
+        0.0025
+      ],
+      "pose_xyz_m": [
+        0.0,
+        0.0,
+        0.03
+      ],
+      "pose_rpy_rad": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mass_kg": 0.018
+    },
+    {
+      "name": "front_right_arm",
+      "link": "front_right_arm",
+      "shape": "box",
+      "size_m": [
+        0.205,
+        0.018,
+        0.005
+      ],
+      "pose_xyz_m": [
+        0.04825,
+        0.05575,
+        0.0
+      ],
+      "pose_rpy_rad": [
+        0.0,
+        0.0,
+        0.857388921550945
+      ],
+      "mass_kg": 0.0155
+    },
+    {
+      "name": "motor_mount_front_right",
+      "link": "motor_mount_front_right",
+      "shape": "cylinder",
+      "radius_m": 0.017,
+      "height_m": 0.004,
+      "pose_xyz_m": [
+        0.0965,
+        0.1115,
+        0.0045000000000000005
+      ],
+      "pose_rpy_rad": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mass_kg": 0.004
+    },
+    {
+      "name": "front_left_arm",
+      "link": "front_left_arm",
+      "shape": "box",
+      "size_m": [
+        0.205,
+        0.018,
+        0.005
+      ],
+      "pose_xyz_m": [
+        -0.04825,
+        0.05575,
+        0.0
+      ],
+      "pose_rpy_rad": [
+        0.0,
+        0.0,
+        2.2842037320388484
+      ],
+      "mass_kg": 0.0155
+    },
+    {
+      "name": "motor_mount_front_left",
+      "link": "motor_mount_front_left",
+      "shape": "cylinder",
+      "radius_m": 0.017,
+      "height_m": 0.004,
+      "pose_xyz_m": [
+        -0.0965,
+        0.1115,
+        0.0045000000000000005
+      ],
+      "pose_rpy_rad": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mass_kg": 0.004
+    },
+    {
+      "name": "rear_left_arm",
+      "link": "rear_left_arm",
+      "shape": "box",
+      "size_m": [
+        0.205,
+        0.018,
+        0.005
+      ],
+      "pose_xyz_m": [
+        -0.04825,
+        -0.05575,
+        0.0
+      ],
+      "pose_rpy_rad": [
+        0.0,
+        0.0,
+        -2.2842037320388484
+      ],
+      "mass_kg": 0.0155
+    },
+    {
+      "name": "motor_mount_rear_left",
+      "link": "motor_mount_rear_left",
+      "shape": "cylinder",
+      "radius_m": 0.017,
+      "height_m": 0.004,
+      "pose_xyz_m": [
+        -0.0965,
+        -0.1115,
+        0.0045000000000000005
+      ],
+      "pose_rpy_rad": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mass_kg": 0.004
+    },
+    {
+      "name": "rear_right_arm",
+      "link": "rear_right_arm",
+      "shape": "box",
+      "size_m": [
+        0.205,
+        0.018,
+        0.005
+      ],
+      "pose_xyz_m": [
+        0.04825,
+        -0.05575,
+        0.0
+      ],
+      "pose_rpy_rad": [
+        0.0,
+        0.0,
+        -0.857388921550945
+      ],
+      "mass_kg": 0.0155
+    },
+    {
+      "name": "motor_mount_rear_right",
+      "link": "motor_mount_rear_right",
+      "shape": "cylinder",
+      "radius_m": 0.017,
+      "height_m": 0.004,
+      "pose_xyz_m": [
+        0.0965,
+        -0.1115,
+        0.0045000000000000005
+      ],
+      "pose_rpy_rad": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mass_kg": 0.004
+    },
+    {
+      "name": "stack_standoff_rear_left",
+      "link": "stack_standoff_rear_left",
+      "shape": "cylinder",
+      "radius_m": 0.0025,
+      "height_m": 0.03,
+      "pose_xyz_m": [
+        -0.01525,
+        -0.01525,
+        0.015
+      ],
+      "pose_rpy_rad": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mass_kg": 0.0015
+    },
+    {
+      "name": "stack_standoff_front_left",
+      "link": "stack_standoff_front_left",
+      "shape": "cylinder",
+      "radius_m": 0.0025,
+      "height_m": 0.03,
+      "pose_xyz_m": [
+        -0.01525,
+        0.01525,
+        0.015
+      ],
+      "pose_rpy_rad": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mass_kg": 0.0015
+    },
+    {
+      "name": "stack_standoff_rear_right",
+      "link": "stack_standoff_rear_right",
+      "shape": "cylinder",
+      "radius_m": 0.0025,
+      "height_m": 0.03,
+      "pose_xyz_m": [
+        0.01525,
+        -0.01525,
+        0.015
+      ],
+      "pose_rpy_rad": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mass_kg": 0.0015
+    },
+    {
+      "name": "stack_standoff_front_right",
+      "link": "stack_standoff_front_right",
+      "shape": "cylinder",
+      "radius_m": 0.0025,
+      "height_m": 0.03,
+      "pose_xyz_m": [
+        0.01525,
+        0.01525,
+        0.015
+      ],
+      "pose_rpy_rad": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mass_kg": 0.0015
+    }
+  ]
+}
