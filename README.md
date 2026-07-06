@@ -85,6 +85,74 @@ python3 sim/pybullet/robot_arm_pybullet.py --arms 2 --parts front_right_arm fron
 
 Add `--gui` to open the PyBullet viewer.
 
+Quest/WebXR controller teleop:
+
+```bash
+python3 sim/pybullet/quest_webxr_teleop.py --gui --advertise-ip 10.0.0.6
+```
+
+The Quest/WebXR code is split into two layers:
+
+- `sim/pybullet/quest_webxr_server.py`: HTTPS/WebXR page, WebSocket receiver,
+  latest controller state.
+- `sim/pybullet/quest_webxr_teleop.py`: PyBullet Panda IK control loop using
+  the latest controller state.
+
+Open the printed `https://<computer-ip>:8443/` URL in Meta Quest Browser,
+accept the local certificate warning, and press `Start VR Teleop`. The right
+controller drives the Panda end-effector target through IK. Trigger or grip
+closes the simulated gripper. This is a demo/teleop bridge; it is not a
+safety-rated robot controller.
+
+Controller orientation is enabled by default. The first right-controller pose
+after streaming starts is treated as neutral. By default, wrist tilt/twist
+rotates only the orange held-object visualization while the Panda arm keeps a
+stable downward gripper pose. This avoids full-arm IK reconfiguration when you
+are just trying to inspect object orientation. For position-only testing, use
+`--orientation-mode fixed`. To make wrist orientation drive the full Panda IK
+target, use `--orientation-target ik`. If wrist rotation feels like it is
+rotating around the wrong frame, try `--orientation-order world`.
+
+By default the teleop scene includes a blue haptic target in PyBullet. Moving
+the simulated gripper near it sends short vibration pulses to the right Quest
+controller; squeezing trigger/grip near the target sends a stronger pulse.
+Disable this with `--no-touch-demo`.
+
+For live tracking diagnostics, open this on the laptop while the Quest page is
+streaming:
+
+```text
+https://10.0.0.6:8443/debug
+```
+
+The debug page plots raw right-controller XYZ over time, top/front motion
+traces, packet age, min/max position range, trigger, and grip values.
+
+To record a motion-range session:
+
+```bash
+python3 sim/pybullet/quest_webxr_teleop.py --gui --advertise-ip 10.0.0.6 --record
+```
+
+Move the right controller through the usable area in front, sides, high/low,
+and near/behind the headset. Samples are saved under
+`captures/quest_tracking_*` with motion segment labels and a continuously
+updated `summary.json`.
+
+Summarize a recording after stopping:
+
+```bash
+python3 analysis/quest_tracking_summary.py captures/quest_tracking_YYYYMMDD_HHMMSS/samples.jsonl
+```
+
+When running inside WSL2 NAT, forward Windows Wi-Fi TCP `8443` to the current
+WSL IP first:
+
+```powershell
+netsh interface portproxy add v4tov4 listenaddress=10.0.0.6 listenport=8443 connectaddress=172.31.204.166 connectport=8443
+New-NetFirewallRule -DisplayName "Quest WebXR to WSL TCP 8443" -Direction Inbound -Action Allow -Protocol TCP -LocalAddress 10.0.0.6 -LocalPort 8443
+```
+
 ## iPhone LOTA
 
 Run the low-latency browser viewer. Choose the `--lota-mode` that matches the

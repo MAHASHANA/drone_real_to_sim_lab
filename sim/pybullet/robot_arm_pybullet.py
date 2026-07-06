@@ -31,6 +31,21 @@ PANDA_UPPER = [2.9671, 1.8326, 2.9671, 0.0, 2.9671, 3.8223, 2.9671]
 PANDA_RANGE = [u - l for l, u in zip(PANDA_LOWER, PANDA_UPPER)]
 
 
+def configure_robot_camera(p, client_id: int, arms: int) -> None:
+    target_y = -0.42 if arms == 1 else -0.36
+    p.resetDebugVisualizerCamera(
+        cameraDistance=1.15 if arms == 1 else 1.35,
+        cameraYaw=-55,
+        cameraPitch=-35,
+        cameraTargetPosition=[0.05, target_y, 0.12],
+        physicsClientId=client_id,
+    )
+
+
+def lerp(a: float, b: float, t: float) -> float:
+    return a * (1.0 - t) + b * t
+
+
 def load_panda(p, client_id: int, base_xyz, base_yaw: float) -> int:
     panda_id = p.loadURDF(
         "franka_panda/panda.urdf",
@@ -43,6 +58,42 @@ def load_panda(p, client_id: int, base_xyz, base_yaw: float) -> int:
         p.resetJointState(panda_id, joint, value, physicsClientId=client_id)
     set_gripper(p, client_id, panda_id, open_width=0.04)
     return panda_id
+
+
+def get_joint_positions(p, client_id: int, panda_id: int) -> list[float]:
+    return [p.getJointState(panda_id, joint, physicsClientId=client_id)[0] for joint in PANDA_ARM_JOINTS]
+
+
+def solve_ik(p, client_id: int, panda_id: int, xyz, orn, rest_pose: list[float] | None = None) -> list[float]:
+    if rest_pose is None:
+        rest_pose = PANDA_REST
+    joint_positions = p.calculateInverseKinematics(
+        panda_id,
+        PANDA_EE_LINK,
+        xyz,
+        orn,
+        lowerLimits=PANDA_LOWER,
+        upperLimits=PANDA_UPPER,
+        jointRanges=PANDA_RANGE,
+        restPoses=rest_pose,
+        maxNumIterations=120,
+        residualThreshold=1e-4,
+        physicsClientId=client_id,
+    )
+    return list(joint_positions[:7])
+
+
+def command_joints(p, client_id: int, panda_id: int, joints: list[float], max_velocity: float) -> None:
+    for joint, target in zip(PANDA_ARM_JOINTS, joints):
+        p.setJointMotorControl2(
+            panda_id,
+            joint,
+            p.POSITION_CONTROL,
+            targetPosition=target,
+            force=220.0,
+            maxVelocity=max_velocity,
+            physicsClientId=client_id,
+        )
 
 
 def set_gripper(p, client_id: int, panda_id: int, open_width: float) -> None:
@@ -58,33 +109,49 @@ def set_gripper(p, client_id: int, panda_id: int, open_width: float) -> None:
 
 
 def command_ee_pose(p, client_id: int, panda_id: int, xyz, orn) -> None:
-    joint_positions = p.calculateInverseKinematics(
-        panda_id,
-        PANDA_EE_LINK,
-        xyz,
-        orn,
-        lowerLimits=PANDA_LOWER,
-        upperLimits=PANDA_UPPER,
-        jointRanges=PANDA_RANGE,
-        restPoses=PANDA_REST,
-        maxNumIterations=80,
-        residualThreshold=1e-4,
-        physicsClientId=client_id,
-    )
-    for joint, target in zip(PANDA_ARM_JOINTS, joint_positions[:7]):
-        p.setJointMotorControl2(
-            panda_id,
-            joint,
-            p.POSITION_CONTROL,
-            targetPosition=target,
-            force=220.0,
-            maxVelocity=1.2,
-            physicsClientId=client_id,
-        )
+    command_joints(p, client_id, panda_id, solve_ik(p, client_id, panda_id, xyz, orn), max_velocity=1.2)
 
 
 def step_for(p, client_id: int, steps: int, gui: bool) -> None:
     for _ in range(steps):
+        p.stepSimulation(physicsClientId=client_id)
+        if gui:
+            time.sleep(1.0 / 240.0)
+
+
+def wait_until_closed(p, client_id: int) -> None:
+    print("GUI stay-open mode: close the PyBullet window or press Ctrl+C in the terminal to exit.")
+    try:
+        while p.isConnected(physicsClientId=client_id):
+            p.stepSimulation(physicsClientId=client_id)
+            time.sleep(1.0 / 240.0)
+    except KeyboardInterrupt:
+        pass
+
+
+def move_ee_linear(
+    p,
+    client_id: int,
+    panda_id: int,
+    target_xyz,
+    target_orn,
+    steps: int,
+    gui: bool,
+    max_velocity: float,
+) -> None:
+    """Move end-effector along a straight Cartesian path using waypoint IK."""
+
+    link_state = p.getLinkState(panda_id, PANDA_EE_LINK, physicsClientId=client_id)
+    start_xyz = link_state[4]
+    rest_pose = get_joint_positions(p, client_id, panda_id)
+    steps = max(1, steps)
+
+    for i in range(1, steps + 1):
+        t = i / steps
+        t = t * t * (3.0 - 2.0 * t)
+        xyz = tuple(lerp(start_xyz[j], target_xyz[j], t) for j in range(3))
+        rest_pose = solve_ik(p, client_id, panda_id, xyz, target_orn, rest_pose=rest_pose)
+        command_joints(p, client_id, panda_id, rest_pose, max_velocity=max_velocity)
         p.stepSimulation(physicsClientId=client_id)
         if gui:
             time.sleep(1.0 / 240.0)
@@ -149,6 +216,9 @@ def main() -> None:
     parser.add_argument("--approach-steps", type=int, default=180)
     parser.add_argument("--carry-steps", type=int, default=240)
     parser.add_argument("--hold-steps", type=int, default=240)
+    parser.add_argument("--start-hold-steps", type=int, default=180)
+    parser.add_argument("--max-velocity", type=float, default=1.2)
+    parser.add_argument("--stay-open", action="store_true", help="Keep the GUI open after the demo finishes.")
     args = parser.parse_args()
 
     parts = load_manifest()
@@ -169,6 +239,8 @@ def main() -> None:
         ((0.45, -0.38, 0.0), math.radians(150.0)),
     ]
     pandas = [load_panda(p, client_id, *panda_specs[i]) for i in range(args.arms)]
+    if args.gui:
+        configure_robot_camera(p, client_id, args.arms)
 
     bodies: dict[str, int] = {}
     targets = {}
@@ -189,6 +261,7 @@ def main() -> None:
         p.getQuaternionFromEuler(bottom_rpy),
         physicsClientId=client_id,
     )
+    step_for(p, client_id, args.start_hold_steps, args.gui)
 
     grasp_constraints = []
     ee_down = p.getQuaternionFromEuler([math.pi, 0.0, math.pi / 2.0])
@@ -196,10 +269,8 @@ def main() -> None:
         part_xyz, _ = starts[name]
         above = (part_xyz[0], part_xyz[1], part_xyz[2] + 0.18)
         grasp = (part_xyz[0], part_xyz[1], part_xyz[2] + 0.055)
-        command_ee_pose(p, client_id, panda_id, above, ee_down)
-        step_for(p, client_id, args.approach_steps, args.gui)
-        command_ee_pose(p, client_id, panda_id, grasp, ee_down)
-        step_for(p, client_id, args.approach_steps, args.gui)
+        move_ee_linear(p, client_id, panda_id, above, ee_down, args.approach_steps, args.gui, args.max_velocity)
+        move_ee_linear(p, client_id, panda_id, grasp, ee_down, args.approach_steps, args.gui, args.max_velocity)
         set_gripper(p, client_id, panda_id, open_width=0.0)
         step_for(p, client_id, 60, args.gui)
         grasp_constraints.append(create_grasp_constraint(p, client_id, panda_id, bodies[name]))
@@ -209,10 +280,8 @@ def main() -> None:
         target_xyz, _ = targets[name]
         carry = (target_xyz[0], target_xyz[1], target_xyz[2] + 0.16)
         place = (target_xyz[0], target_xyz[1], target_xyz[2] + 0.055)
-        command_ee_pose(p, client_id, panda_id, carry, ee_down)
-        step_for(p, client_id, args.carry_steps, args.gui)
-        command_ee_pose(p, client_id, panda_id, place, ee_down)
-        step_for(p, client_id, args.carry_steps, args.gui)
+        move_ee_linear(p, client_id, panda_id, carry, ee_down, args.carry_steps, args.gui, args.max_velocity)
+        move_ee_linear(p, client_id, panda_id, place, ee_down, args.carry_steps, args.gui, args.max_velocity)
 
     assembly_constraints = []
     for constraint_id, panda_id, name in zip(grasp_constraints, pandas, selected_names):
@@ -234,6 +303,8 @@ def main() -> None:
         f"Loaded {args.arms} Panda arm(s), grasped {len(grasp_constraints)} part(s), "
         f"created {len(assembly_constraints)} assembly constraint(s)."
     )
+    if args.gui and args.stay_open:
+        wait_until_closed(p, client_id)
     p.disconnect(physicsClientId=client_id)
 
 

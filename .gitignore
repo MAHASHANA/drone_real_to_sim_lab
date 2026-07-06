@@ -22,6 +22,7 @@ Thumbs.db
 captures/
 data/captures/
 sensors/iphone_lota/captures/
+.local_certs/
 *.npy
 *.npz
 *.ply
