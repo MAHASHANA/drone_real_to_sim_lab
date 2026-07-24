@@ -1,12 +1,14 @@
 # Drone Real-to-Sim Lab
 
-Real-to-sim workspace for iPhone LiDAR/LOTA sensing, Mark4 7-inch FPV frame
-simulation, calibration, and assembly experiments.
+Real-to-sim workspace for RGB-D and iPhone LiDAR sensing, Mark4 7-inch FPV
+frame simulation, calibration, Quest teleoperation, and assembly experiments.
 
 The current stack is intentionally simple:
 
+- Intel RealSense D455 through ROS2 for aligned RGB-D and point clouds.
 - iPhone 14 Pro + LOTA for depth, PLY point clouds, and OSC camera pose.
 - PyBullet for the drone frame and robot-arm assembly scaffold.
+- Meta Quest 2 + WebXR for controller tracking and simulated Panda teleoperation.
 - Generated primitive URDF/manifest for fast iteration before CAD meshes.
 
 ## Layout
@@ -29,6 +31,10 @@ sensors/iphone_lota/
   lota_realtime_viewer.py
   lota_browser_3d_live_viewer.py
   lota_windows_osc_logger.ps1
+
+sensors/realsense_d455/
+  build_rsusb_backend.sh
+  launch_d455_ros2.sh
 
 calibration/
   future camera/PLY/world frame validation scripts
@@ -152,6 +158,28 @@ WSL IP first:
 netsh interface portproxy add v4tov4 listenaddress=10.0.0.6 listenport=8443 connectaddress=172.31.204.166 connectport=8443
 New-NetFirewallRule -DisplayName "Quest WebXR to WSL TCP 8443" -Direction Inbound -Action Allow -Protocol TCP -LocalAddress 10.0.0.6 -LocalPort 8443
 ```
+
+## Intel RealSense D455 and ROS2
+
+The verified WSL2 path uses the ROS2 Humble `realsense2_camera` package with a
+local librealsense RSUSB backend. This bypasses the missing `uvcvideo` support
+in the current WSL kernel without replacing the system ROS2 libraries.
+
+After attaching the D455 to WSL with `usbipd-win`, launch the verified
+low-bandwidth RGB-D configuration:
+
+```bash
+sensors/realsense_d455/launch_d455_ros2.sh
+```
+
+This publishes color, depth, aligned depth, camera calibration, extrinsics, and
+a registered colored point cloud. See
+[`sensors/realsense_d455/README.md`](sensors/realsense_d455/README.md) for
+setup, build, topic, and rate-check details.
+
+The D455 data is not yet rendered inside Quest. The next integration is a ROS2
+subscriber/WebSocket bridge that downsamples the colored point cloud and sends
+it to the existing WebXR scene together with PyBullet link transforms.
 
 ## iPhone LOTA
 
