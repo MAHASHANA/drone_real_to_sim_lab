@@ -159,6 +159,44 @@ netsh interface portproxy add v4tov4 listenaddress=10.0.0.6 listenport=8443 conn
 New-NetFirewallRule -DisplayName "Quest WebXR to WSL TCP 8443" -Direction Inbound -Action Allow -Protocol TCP -LocalAddress 10.0.0.6 -LocalPort 8443
 ```
 
+### PyBullet Wrist-Camera Workcell
+
+Run a single Panda with a simulated eye-in-hand RGB-D camera and control it
+from Quest:
+
+```bash
+npm install
+python3 sim/pybullet/quest_wrist_camera_teleop.py \
+  --gui \
+  --advertise-ip 10.0.0.6
+```
+
+Open `https://10.0.0.6:8443/` in Meta Quest Browser and select **Enter VR
+Workcell**. The right controller drives the Panda end-effector through IK;
+trigger or grip closes the gripper. The left-controller ray can select either
+RGB-D panel, and holding left grip attaches that panel to the controller for
+repositioning.
+
+The simulated optical camera is rigidly mounted to Panda link 11 with the
+default transform:
+
+```text
+T_EE_C.xyz  = [0.00, 0.00, -0.08] m
+T_EE_C.quat = [0.00, 0.00, 0.00, 1.00]
+```
+
+Its optical convention is `+x` right, `+y` down, `+z` forward. The camera pose
+for every frame is `T_W_C = T_W_EE * T_EE_C`. Use scripted motion for a
+headset-free transport test:
+
+```bash
+python3 sim/pybullet/quest_wrist_camera_teleop.py \
+  --demo-motion \
+  --run-seconds 15 \
+  --port 9444 \
+  --advertise-ip 127.0.0.1
+```
+
 ## Intel RealSense D455 and ROS2
 
 The verified WSL2 path uses the ROS2 Humble `realsense2_camera` package with a

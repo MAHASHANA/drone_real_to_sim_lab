@@ -336,7 +336,7 @@ REALSENSE_HTML = """<!doctype html>
     .feeds { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-top: 16px; }
     figure { margin: 0; background: #141414; border: 1px solid #303030; border-radius: 6px; overflow: hidden; }
     figcaption { padding: 9px 11px; color: #ccc; }
-    img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #000; }
+    .feed-canvas { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
     pre { white-space: pre-wrap; background: #141414; border: 1px solid #303030; padding: 11px; border-radius: 6px; color: #cfd8dc; }
   </style>
 </head>
@@ -347,8 +347,8 @@ REALSENSE_HTML = """<!doctype html>
   <button id="start">Enter VR Workcell</button>
   <pre id="status">Waiting for ROS2 frames...</pre>
   <section class="feeds">
-    <figure><img id="color" alt="RealSense color stream" /><figcaption>Color</figcaption></figure>
-    <figure><img id="depth" alt="RealSense aligned depth stream" /><figcaption>Aligned depth</figcaption></figure>
+    <figure><canvas id="color" class="feed-canvas" width="16" height="9"></canvas><figcaption>Color</figcaption></figure>
+    <figure><canvas id="depth" class="feed-canvas" width="16" height="9"></canvas><figcaption>Aligned depth</figcaption></figure>
   </section>
   <canvas id="xrCanvas" width="1024" height="1024" style="display:none"></canvas>
 </main>
@@ -357,12 +357,15 @@ import * as THREE from "/vendor/three.module.js";
 
 const statusEl = document.getElementById("status");
 const startBtn = document.getElementById("start");
-const colorImg = document.getElementById("color");
-const depthImg = document.getElementById("depth");
+const colorCanvas = document.getElementById("color");
+const depthCanvas = document.getElementById("depth");
 const canvas = document.getElementById("xrCanvas");
 let lastColorSeq = -1;
 let lastDepthSeq = -1;
 let panelsPlaced = false;
+let ws = null;
+let lastSent = 0;
+let lastRightSource = null;
 
 const renderer = new THREE.WebGLRenderer({canvas, antialias: true});
 renderer.xr.enabled = true;
@@ -375,6 +378,90 @@ scene.background = new THREE.Color(0x101216);
 const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 50);
 const clock = new THREE.Clock();
 
+function wsUrl() {
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${location.host}/ws`;
+}
+
+function connectWs() {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  ws = new WebSocket(wsUrl());
+  ws.onmessage = event => {
+    try {
+      const message = JSON.parse(event.data);
+      if (message.type === "haptic") {
+        pulseHaptic(message.intensity || 0.2, message.duration_ms || 30);
+      }
+    } catch (err) {
+      // Ignore malformed control messages.
+    }
+  };
+  ws.onclose = () => {
+    ws = null;
+    setTimeout(connectWs, 1000);
+  };
+}
+
+function buttonState(gamepad, index) {
+  if (!gamepad || !gamepad.buttons || index >= gamepad.buttons.length) {
+    return {pressed: false, value: 0};
+  }
+  const button = gamepad.buttons[index];
+  return {pressed: !!button.pressed, value: button.value || 0};
+}
+
+function sourceName(source) {
+  if (source.handedness === "left") return "left";
+  if (source.handedness === "right") return "right";
+  return "unknown";
+}
+
+function pulseHaptic(intensity, durationMs) {
+  const gamepad = lastRightSource && lastRightSource.gamepad;
+  if (!gamepad) return;
+  const boundedIntensity = Math.max(0, Math.min(1, intensity));
+  const boundedDuration = Math.max(10, Math.min(200, durationMs));
+  if (gamepad.hapticActuators && gamepad.hapticActuators[0] && gamepad.hapticActuators[0].pulse) {
+    gamepad.hapticActuators[0].pulse(boundedIntensity, boundedDuration);
+  } else if (gamepad.vibrationActuator && gamepad.vibrationActuator.playEffect) {
+    gamepad.vibrationActuator.playEffect("dual-rumble", {
+      duration: boundedDuration,
+      strongMagnitude: boundedIntensity,
+      weakMagnitude: boundedIntensity * 0.5
+    });
+  }
+}
+
+function sendControllerState(time, frame) {
+  if (!frame || !ws || ws.readyState !== WebSocket.OPEN || time - lastSent < 33) return;
+  const referenceSpace = renderer.xr.getReferenceSpace();
+  const session = renderer.xr.getSession();
+  if (!referenceSpace || !session) return;
+  lastSent = time;
+  const controllersState = {};
+  for (const source of session.inputSources) {
+    if (!source.gripSpace) continue;
+    const pose = frame.getPose(source.gripSpace, referenceSpace);
+    if (!pose) continue;
+    if (source.handedness === "right") lastRightSource = source;
+    const position = pose.transform.position;
+    const orientation = pose.transform.orientation;
+    controllersState[sourceName(source)] = {
+      position: [position.x, position.y, position.z],
+      orientation: [orientation.x, orientation.y, orientation.z, orientation.w],
+      trigger: buttonState(source.gamepad, 0),
+      grip: buttonState(source.gamepad, 1),
+      primary: buttonState(source.gamepad, 4),
+      secondary: buttonState(source.gamepad, 5)
+    };
+  }
+  ws.send(JSON.stringify({
+    type: "xr_controller_pose",
+    time: time / 1000,
+    controllers: controllersState
+  }));
+}
+
 const floor = new THREE.GridHelper(8, 32, 0x5b6772, 0x303840);
 floor.position.y = 0;
 scene.add(floor);
@@ -383,8 +470,8 @@ const workcellOrigin = new THREE.AxesHelper(0.25);
 workcellOrigin.position.set(0, 0.01, -1.5);
 scene.add(workcellOrigin);
 
-function makeTexture(image, colorTexture) {
-  const texture = new THREE.Texture(image);
+function makeTexture(canvas, colorTexture) {
+  const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
   texture.generateMipmaps = false;
@@ -392,10 +479,47 @@ function makeTexture(image, colorTexture) {
   return texture;
 }
 
-const colorTexture = makeTexture(colorImg, true);
-const depthTexture = makeTexture(depthImg, true);
-colorImg.onload = () => { colorTexture.needsUpdate = true; };
-depthImg.onload = () => { depthTexture.needsUpdate = true; };
+const colorTexture = makeTexture(colorCanvas, true);
+const depthTexture = makeTexture(depthCanvas, true);
+const colorLoader = {
+  canvas: colorCanvas,
+  context: colorCanvas.getContext("2d"),
+  texture: colorTexture,
+  loading: false,
+  pendingSeq: 0
+};
+const depthLoader = {
+  canvas: depthCanvas,
+  context: depthCanvas.getContext("2d"),
+  texture: depthTexture,
+  loading: false,
+  pendingSeq: 0
+};
+
+function requestFrame(loader, endpoint, sequence) {
+  loader.pendingSeq = Math.max(loader.pendingSeq, sequence);
+  if (loader.loading) return;
+  const requestedSeq = loader.pendingSeq;
+  loader.loading = true;
+  const image = new Image();
+  image.onload = () => {
+    if (loader.canvas.width !== image.naturalWidth || loader.canvas.height !== image.naturalHeight) {
+      loader.canvas.width = image.naturalWidth;
+      loader.canvas.height = image.naturalHeight;
+    }
+    loader.context.drawImage(image, 0, 0);
+    loader.texture.needsUpdate = true;
+    loader.loading = false;
+    if (loader.pendingSeq > requestedSeq) {
+      requestFrame(loader, endpoint, loader.pendingSeq);
+    }
+  };
+  image.onerror = () => {
+    loader.loading = false;
+    setTimeout(() => requestFrame(loader, endpoint, loader.pendingSeq), 100);
+  };
+  image.src = `${endpoint}?seq=${requestedSeq}`;
+}
 
 const panelGeometry = new THREE.PlaneGeometry(0.72, 0.405);
 const panels = [];
@@ -462,11 +586,11 @@ async function pollFrames() {
     const state = await response.json();
     if (state.color_seq !== lastColorSeq && state.color_seq > 0) {
       lastColorSeq = state.color_seq;
-      colorImg.src = `/realsense/color.jpg?seq=${state.color_seq}`;
+      requestFrame(colorLoader, "/realsense/color.jpg", state.color_seq);
     }
     if (state.depth_seq !== lastDepthSeq && state.depth_seq > 0) {
       lastDepthSeq = state.depth_seq;
-      depthImg.src = `/realsense/depth.jpg?seq=${state.depth_seq}`;
+      requestFrame(depthLoader, "/realsense/depth.jpg", state.depth_seq);
     }
     const colorAge = state.color_age_s === null ? "none" : `${state.color_age_s.toFixed(2)} s`;
     const depthAge = state.depth_age_s === null ? "none" : `${state.depth_age_s.toFixed(2)} s`;
@@ -493,6 +617,8 @@ function panelIntersection(controller) {
 
 function onSqueezeStart(event) {
   const controller = event.target;
+  const inputSource = controller.userData.inputSource;
+  if (!inputSource || inputSource.handedness !== "left") return;
   const hit = panelIntersection(controller);
   if (!hit || hit.object.userData.owner) return;
   controller.attach(hit.object);
@@ -563,9 +689,10 @@ function updateControllers(deltaSeconds) {
   if (resetRequested) placePanelsInFrontOfViewer();
 }
 
-function render() {
+function render(time, frame) {
   if (renderer.xr.isPresenting && !panelsPlaced) placePanelsInFrontOfViewer();
   updateControllers(Math.min(clock.getDelta(), 0.05));
+  if (renderer.xr.isPresenting) sendControllerState(time, frame);
   renderer.render(scene, camera);
 }
 
@@ -591,12 +718,23 @@ async function startVr() {
 }
 
 renderer.setAnimationLoop(render);
+connectWs();
 pollFrames();
 startBtn.onclick = startVr;
 </script>
 </body>
 </html>
 """
+
+SIM_WRIST_HTML = (
+    REALSENSE_HTML.replace("Quest RealSense RGB-D Workcell", "Quest PyBullet Wrist RGB-D")
+    .replace("RealSense D455 RGB-D Workcell", "PyBullet Wrist-Camera Workcell")
+    .replace("Waiting for ROS2 frames...", "Waiting for simulated wrist-camera frames...")
+    .replace(
+        "In VR, point at a panel and hold grip to move it.",
+        "The right controller drives the Panda. Point with the left controller and hold grip to move a panel.",
+    )
+)
 
 
 DEBUG_HTML = """<!doctype html>
