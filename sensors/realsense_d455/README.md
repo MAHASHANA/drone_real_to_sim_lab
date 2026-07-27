@@ -91,6 +91,47 @@ ros2 topic hz /camera/camera/color/image_raw
 ros2 topic hz /camera/camera/depth/color/points
 ```
 
+## Quest 2 RGB-D Viewer
+
+Keep `launch_d455_ros2.sh` running. In a second terminal with ROS2 Humble
+sourced, start the Quest bridge:
+
+```bash
+cd /home/satya/ai_agents/drones/drone_real_to_sim_lab
+npm install
+python3 sensors/realsense_d455/quest_realsense_viewer.py \
+  --advertise-ip 10.0.0.6
+```
+
+The default subscriptions are:
+
+```text
+/camera/camera/color/image_raw
+/camera/camera/aligned_depth_to_color/image_raw
+```
+
+Open `https://10.0.0.6:8443/` in Meta Quest Browser. Accept the local
+certificate warning. The browser page first shows color and colorized aligned
+depth in 2D; **Enter VR Workcell** presents the same streams as two world-space
+panels. Point at either panel and hold the controller grip to reposition and
+rotate it. Use the thumbstick vertically while holding to change its distance,
+release grip to leave it in place, and press A to reset both panels.
+
+The bridge JPEG-compresses only the latest frame and never queues old sensor
+frames. Adjust the depth display and compression when needed:
+
+```bash
+python3 sensors/realsense_d455/quest_realsense_viewer.py \
+  --advertise-ip 10.0.0.6 \
+  --min-depth-m 0.2 \
+  --max-depth-m 2.5 \
+  --jpeg-quality 70
+```
+
+Port `8443` is shared with the Quest PyBullet teleoperation server, so only one
+of these programs can use that port at a time. This first viewer sends RGB-D
+images, not the full ROS2 point cloud.
+
 USB control-transfer warnings can occur through USB/IP even while frames are
 being published. Validate topic rates before treating the warnings as a stream
 failure.

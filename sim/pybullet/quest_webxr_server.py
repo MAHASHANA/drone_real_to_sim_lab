@@ -31,6 +31,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CERT_DIR = PROJECT_ROOT / ".local_certs"
 CERT_PATH = CERT_DIR / "quest_webxr.crt"
 KEY_PATH = CERT_DIR / "quest_webxr.key"
+THREE_BUILD_DIR = PROJECT_ROOT / "node_modules" / "three" / "build"
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
@@ -320,6 +321,283 @@ startBtn.onclick = startVr;
 </html>
 """
 
+REALSENSE_HTML = """<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Quest RealSense RGB-D Workcell</title>
+  <style>
+    html, body { margin: 0; min-height: 100%; background: #080808; color: #eee; font: 16px system-ui, sans-serif; }
+    main { max-width: 1080px; margin: 0 auto; padding: 20px; }
+    h1 { margin: 0 0 8px; font-size: 26px; }
+    button { font: inherit; padding: 12px 16px; border: 0; background: #55b7ff; color: #04111f; border-radius: 6px; font-weight: 700; }
+    .muted { color: #aaa; }
+    .feeds { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-top: 16px; }
+    figure { margin: 0; background: #141414; border: 1px solid #303030; border-radius: 6px; overflow: hidden; }
+    figcaption { padding: 9px 11px; color: #ccc; }
+    img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #000; }
+    pre { white-space: pre-wrap; background: #141414; border: 1px solid #303030; padding: 11px; border-radius: 6px; color: #cfd8dc; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>RealSense D455 RGB-D Workcell</h1>
+  <p class="muted">In VR, point at a panel and hold grip to move it. Use the thumbstick while holding to adjust distance. Press A to reset.</p>
+  <button id="start">Enter VR Workcell</button>
+  <pre id="status">Waiting for ROS2 frames...</pre>
+  <section class="feeds">
+    <figure><img id="color" alt="RealSense color stream" /><figcaption>Color</figcaption></figure>
+    <figure><img id="depth" alt="RealSense aligned depth stream" /><figcaption>Aligned depth</figcaption></figure>
+  </section>
+  <canvas id="xrCanvas" width="1024" height="1024" style="display:none"></canvas>
+</main>
+<script type="module">
+import * as THREE from "/vendor/three.module.js";
+
+const statusEl = document.getElementById("status");
+const startBtn = document.getElementById("start");
+const colorImg = document.getElementById("color");
+const depthImg = document.getElementById("depth");
+const canvas = document.getElementById("xrCanvas");
+let lastColorSeq = -1;
+let lastDepthSeq = -1;
+let panelsPlaced = false;
+
+const renderer = new THREE.WebGLRenderer({canvas, antialias: true});
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType("local-floor");
+renderer.setSize(1024, 1024, false);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x101216);
+const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 50);
+const clock = new THREE.Clock();
+
+const floor = new THREE.GridHelper(8, 32, 0x5b6772, 0x303840);
+floor.position.y = 0;
+scene.add(floor);
+
+const workcellOrigin = new THREE.AxesHelper(0.25);
+workcellOrigin.position.set(0, 0.01, -1.5);
+scene.add(workcellOrigin);
+
+function makeTexture(image, colorTexture) {
+  const texture = new THREE.Texture(image);
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  texture.colorSpace = colorTexture ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  return texture;
+}
+
+const colorTexture = makeTexture(colorImg, true);
+const depthTexture = makeTexture(depthImg, true);
+colorImg.onload = () => { colorTexture.needsUpdate = true; };
+depthImg.onload = () => { depthTexture.needsUpdate = true; };
+
+const panelGeometry = new THREE.PlaneGeometry(0.72, 0.405);
+const panels = [];
+
+function createPanel(texture, borderColor) {
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    side: THREE.DoubleSide,
+    toneMapped: false
+  });
+  const panel = new THREE.Mesh(panelGeometry, material);
+  const border = new THREE.LineSegments(
+    new THREE.EdgesGeometry(panelGeometry),
+    new THREE.LineBasicMaterial({color: borderColor})
+  );
+  border.position.z = 0.002;
+  panel.add(border);
+  panel.userData.border = border;
+  panel.userData.baseColor = borderColor;
+  panel.userData.owner = null;
+  scene.add(panel);
+  panels.push(panel);
+  return panel;
+}
+
+const colorPanel = createPanel(colorTexture, 0x55b7ff);
+const depthPanel = createPanel(depthTexture, 0xffc857);
+
+function releasePanel(controller) {
+  const panel = controller.userData.selected;
+  if (!panel) return;
+  scene.attach(panel);
+  panel.userData.owner = null;
+  controller.userData.selected = null;
+}
+
+function placePanelsInFrontOfViewer() {
+  for (const controller of controllers) releasePanel(controller);
+  const xrCamera = renderer.xr.getCamera(camera);
+  const headPosition = new THREE.Vector3();
+  const headQuaternion = new THREE.Quaternion();
+  xrCamera.getWorldPosition(headPosition);
+  xrCamera.getWorldQuaternion(headQuaternion);
+
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(headQuaternion);
+  forward.y = 0;
+  if (forward.lengthSq() < 0.001) forward.set(0, 0, -1);
+  forward.normalize();
+  const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+  const center = headPosition.clone().addScaledVector(forward, 1.4);
+  center.y = Math.max(1.0, headPosition.y);
+
+  colorPanel.position.copy(center).addScaledVector(right, -0.4);
+  depthPanel.position.copy(center).addScaledVector(right, 0.4);
+  colorPanel.lookAt(headPosition);
+  depthPanel.lookAt(headPosition);
+  panelsPlaced = true;
+}
+
+async function pollFrames() {
+  try {
+    const response = await fetch("/realsense/status", {cache: "no-store"});
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const state = await response.json();
+    if (state.color_seq !== lastColorSeq && state.color_seq > 0) {
+      lastColorSeq = state.color_seq;
+      colorImg.src = `/realsense/color.jpg?seq=${state.color_seq}`;
+    }
+    if (state.depth_seq !== lastDepthSeq && state.depth_seq > 0) {
+      lastDepthSeq = state.depth_seq;
+      depthImg.src = `/realsense/depth.jpg?seq=${state.depth_seq}`;
+    }
+    const colorAge = state.color_age_s === null ? "none" : `${state.color_age_s.toFixed(2)} s`;
+    const depthAge = state.depth_age_s === null ? "none" : `${state.depth_age_s.toFixed(2)} s`;
+    statusEl.textContent =
+      `color frame=${state.color_seq} ${state.color_width}x${state.color_height} age=${colorAge}\\n` +
+      `depth frame=${state.depth_seq} ${state.depth_width}x${state.depth_height} age=${depthAge}`;
+  } catch (err) {
+    statusEl.textContent = `Stream status error: ${err}`;
+  } finally {
+    setTimeout(pollFrames, 80);
+  }
+}
+
+const raycaster = new THREE.Raycaster();
+const rotationMatrix = new THREE.Matrix4();
+
+function panelIntersection(controller) {
+  rotationMatrix.identity().extractRotation(controller.matrixWorld);
+  raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+  raycaster.ray.direction.set(0, 0, -1).applyMatrix4(rotationMatrix).normalize();
+  const hits = raycaster.intersectObjects(panels, false);
+  return hits.length ? hits[0] : null;
+}
+
+function onSqueezeStart(event) {
+  const controller = event.target;
+  const hit = panelIntersection(controller);
+  if (!hit || hit.object.userData.owner) return;
+  controller.attach(hit.object);
+  hit.object.userData.owner = controller;
+  controller.userData.selected = hit.object;
+}
+
+function onSqueezeEnd(event) {
+  releasePanel(event.target);
+}
+
+function makeController(index) {
+  const controller = renderer.xr.getController(index);
+  const rayGeometry = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0, 0, -1)
+  ]);
+  const rayMaterial = new THREE.LineBasicMaterial({color: 0xffffff});
+  const ray = new THREE.Line(rayGeometry, rayMaterial);
+  ray.name = "selection-ray";
+  ray.scale.z = 3;
+  controller.add(ray);
+  controller.userData.ray = ray;
+  controller.userData.selected = null;
+  controller.userData.inputSource = null;
+  controller.userData.primaryPressed = false;
+  controller.addEventListener("connected", event => {
+    controller.userData.inputSource = event.data;
+  });
+  controller.addEventListener("disconnected", () => {
+    releasePanel(controller);
+    controller.userData.inputSource = null;
+  });
+  controller.addEventListener("squeezestart", onSqueezeStart);
+  controller.addEventListener("squeezeend", onSqueezeEnd);
+  scene.add(controller);
+  return controller;
+}
+
+const controllers = [makeController(0), makeController(1)];
+
+function updateControllers(deltaSeconds) {
+  for (const panel of panels) {
+    if (!panel.userData.owner) panel.userData.border.material.color.setHex(panel.userData.baseColor);
+  }
+
+  let resetRequested = false;
+  for (const controller of controllers) {
+    const selected = controller.userData.selected;
+    const hit = selected ? null : panelIntersection(controller);
+    controller.userData.ray.scale.z = hit ? hit.distance : 3;
+    controller.userData.ray.material.color.setHex(hit ? 0x67e8a5 : 0xffffff);
+    if (hit) hit.object.userData.border.material.color.setHex(0x67e8a5);
+    if (selected) selected.userData.border.material.color.setHex(0xff6b6b);
+
+    const gamepad = controller.userData.inputSource && controller.userData.inputSource.gamepad;
+    if (!gamepad) continue;
+    if (selected && gamepad.axes.length) {
+      const verticalAxis = gamepad.axes[gamepad.axes.length - 1];
+      if (Math.abs(verticalAxis) > 0.15) {
+        selected.position.z += verticalAxis * deltaSeconds * 0.8;
+      }
+    }
+    const primaryPressed = !!(gamepad.buttons[4] && gamepad.buttons[4].pressed);
+    if (primaryPressed && !controller.userData.primaryPressed) resetRequested = true;
+    controller.userData.primaryPressed = primaryPressed;
+  }
+  if (resetRequested) placePanelsInFrontOfViewer();
+}
+
+function render() {
+  if (renderer.xr.isPresenting && !panelsPlaced) placePanelsInFrontOfViewer();
+  updateControllers(Math.min(clock.getDelta(), 0.05));
+  renderer.render(scene, camera);
+}
+
+async function startVr() {
+  if (!navigator.xr) {
+    statusEl.textContent = "WebXR is unavailable. Open this page in Meta Quest Browser over HTTPS.";
+    return;
+  }
+  if (!(await navigator.xr.isSessionSupported("immersive-vr"))) {
+    statusEl.textContent = "Immersive VR is not supported on this browser or device.";
+    return;
+  }
+  const session = await navigator.xr.requestSession("immersive-vr", {
+    optionalFeatures: ["local-floor", "bounded-floor"]
+  });
+  panelsPlaced = false;
+  session.addEventListener("end", () => {
+    panelsPlaced = false;
+    startBtn.textContent = "Enter VR Workcell";
+  });
+  await renderer.xr.setSession(session);
+  startBtn.textContent = "VR Workcell Running";
+}
+
+renderer.setAnimationLoop(render);
+pollFrames();
+startBtn.onclick = startVr;
+</script>
+</body>
+</html>
+"""
+
 
 DEBUG_HTML = """<!doctype html>
 <html>
@@ -584,6 +862,59 @@ class TeleopState:
             }
 
 
+@dataclass
+class SensorFrameState:
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    color_jpeg: bytes | None = None
+    depth_jpeg: bytes | None = None
+    color_seq: int = 0
+    depth_seq: int = 0
+    color_time: float = 0.0
+    depth_time: float = 0.0
+    color_width: int = 0
+    color_height: int = 0
+    depth_width: int = 0
+    depth_height: int = 0
+
+    def update_color(self, jpeg: bytes, width: int, height: int) -> None:
+        with self.lock:
+            self.color_jpeg = jpeg
+            self.color_seq += 1
+            self.color_time = time.time()
+            self.color_width = int(width)
+            self.color_height = int(height)
+
+    def update_depth(self, jpeg: bytes, width: int, height: int) -> None:
+        with self.lock:
+            self.depth_jpeg = jpeg
+            self.depth_seq += 1
+            self.depth_time = time.time()
+            self.depth_width = int(width)
+            self.depth_height = int(height)
+
+    def image_snapshot(self, stream: str) -> bytes | None:
+        with self.lock:
+            if stream == "color":
+                return self.color_jpeg
+            if stream == "depth":
+                return self.depth_jpeg
+            raise ValueError(f"Unknown sensor stream: {stream}")
+
+    def snapshot(self) -> dict:
+        now = time.time()
+        with self.lock:
+            return {
+                "color_seq": self.color_seq,
+                "depth_seq": self.depth_seq,
+                "color_age_s": now - self.color_time if self.color_time else None,
+                "depth_age_s": now - self.depth_time if self.depth_time else None,
+                "color_width": self.color_width,
+                "color_height": self.color_height,
+                "depth_width": self.depth_width,
+                "depth_height": self.depth_height,
+            }
+
+
 def recv_exact(conn, nbytes: int) -> bytes:
     chunks = []
     remaining = nbytes
@@ -633,7 +964,11 @@ def send_ws_text(conn, text: str) -> None:
     conn.sendall(bytes(header) + payload)
 
 
-def make_handler(state: TeleopState):
+def make_handler(
+    state: TeleopState,
+    sensor_state: SensorFrameState | None = None,
+    root_html: str = INDEX_HTML,
+):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args) -> None:  # noqa: A002
             return
@@ -641,9 +976,60 @@ def make_handler(state: TeleopState):
         def do_GET(self) -> None:  # noqa: N802
             path = urlparse(self.path).path
             if path == "/":
-                body = INDEX_HTML.encode("utf-8")
+                body = root_html.encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if path in ("/vendor/three.module.js", "/vendor/three.core.js"):
+                source_path = THREE_BUILD_DIR / Path(path).name
+                if not source_path.exists():
+                    self.send_error(503, "Three.js is missing; run npm install")
+                    return
+                body = source_path.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/javascript; charset=utf-8")
+                self.send_header("Cache-Control", "public, max-age=86400")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if path == "/realsense":
+                body = REALSENSE_HTML.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if path == "/realsense/status":
+                if sensor_state is None:
+                    self.send_error(503, "RealSense bridge is not running")
+                    return
+                body = json.dumps(sensor_state.snapshot(), separators=(",", ":")).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if path in ("/realsense/color.jpg", "/realsense/depth.jpg"):
+                if sensor_state is None:
+                    self.send_error(503, "RealSense bridge is not running")
+                    return
+                stream = "color" if path.endswith("color.jpg") else "depth"
+                body = sensor_state.image_snapshot(stream)
+                if body is None:
+                    self.send_error(503, f"No {stream} frame received")
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
@@ -769,10 +1155,17 @@ def ensure_cert(host_ip: str) -> None:
     os.chmod(KEY_PATH, 0o600)
 
 
-def serve_https(host: str, port: int, advertise_ip: str, state: TeleopState) -> ThreadingHTTPServer:
+def serve_https(
+    host: str,
+    port: int,
+    advertise_ip: str,
+    state: TeleopState,
+    sensor_state: SensorFrameState | None = None,
+    root_html: str = INDEX_HTML,
+) -> ThreadingHTTPServer:
     lan_ip = advertise_ip or get_lan_ip()
     ensure_cert(lan_ip)
-    server = ThreadingHTTPServer((host, port), make_handler(state))
+    server = ThreadingHTTPServer((host, port), make_handler(state, sensor_state, root_html))
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(certfile=str(CERT_PATH), keyfile=str(KEY_PATH))
     server.socket = context.wrap_socket(server.socket, server_side=True)

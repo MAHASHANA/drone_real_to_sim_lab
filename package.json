@@ -1,0 +1,7 @@
+{
+  "name": "drone-real-to-sim-lab",
+  "private": true,
+  "dependencies": {
+    "three": "0.180.0"
+  }
+}

@@ -43,6 +43,7 @@ sensors/iphone_lota/captures/
 # Build/package outputs
 build/
 dist/
+node_modules/
 *.egg-info/
 
 # Simulation/runtime temp files

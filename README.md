@@ -177,9 +177,22 @@ a registered colored point cloud. See
 [`sensors/realsense_d455/README.md`](sensors/realsense_d455/README.md) for
 setup, build, topic, and rate-check details.
 
-The D455 data is not yet rendered inside Quest. The next integration is a ROS2
-subscriber/WebSocket bridge that downsamples the colored point cloud and sends
-it to the existing WebXR scene together with PyBullet link transforms.
+To visualize live color and aligned depth in Quest, leave the camera launch
+running and start the RGB-D WebXR bridge in a second ROS2 terminal:
+
+```bash
+npm install
+python3 sensors/realsense_d455/quest_realsense_viewer.py \
+  --advertise-ip 10.0.0.6
+```
+
+Open the printed `https://10.0.0.6:8443/` URL in Meta Quest Browser. Accept the
+local certificate warning, verify both feeds on the normal page, then select
+**Enter VR Workcell** to show color and depth as world-space panels. Point at a
+panel and hold controller grip to move it, use the thumbstick to adjust its
+distance, and press A to reset both panels. The viewer keeps only the newest
+JPEG-compressed frame so slow headset or network clients cannot build a
+stale-frame queue. It does not yet render the registered 3D point cloud.
 
 ## iPhone LOTA
 
