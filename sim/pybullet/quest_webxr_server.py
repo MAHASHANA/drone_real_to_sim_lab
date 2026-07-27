@@ -470,8 +470,8 @@ const workcellOrigin = new THREE.AxesHelper(0.25);
 workcellOrigin.position.set(0, 0.01, -1.5);
 scene.add(workcellOrigin);
 
-function makeTexture(canvas, colorTexture) {
-  const texture = new THREE.CanvasTexture(canvas);
+function makeTexture(colorTexture) {
+  const texture = new THREE.Texture();
   texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
   texture.generateMipmaps = false;
@@ -479,8 +479,8 @@ function makeTexture(canvas, colorTexture) {
   return texture;
 }
 
-const colorTexture = makeTexture(colorCanvas, true);
-const depthTexture = makeTexture(depthCanvas, true);
+const colorTexture = makeTexture(true);
+const depthTexture = makeTexture(true);
 const colorLoader = {
   canvas: colorCanvas,
   context: colorCanvas.getContext("2d"),
@@ -508,6 +508,7 @@ function requestFrame(loader, endpoint, sequence) {
       loader.canvas.height = image.naturalHeight;
     }
     loader.context.drawImage(image, 0, 0);
+    loader.texture.image = image;
     loader.texture.needsUpdate = true;
     loader.loading = false;
     if (loader.pendingSeq > requestedSeq) {

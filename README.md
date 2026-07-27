@@ -177,6 +177,15 @@ trigger or grip closes the gripper. The left-controller ray can select either
 RGB-D panel, and holding left grip attaches that panel to the controller for
 repositioning.
 
+Position teleoperation keeps the end-effector orientation fixed by default.
+Add `--orientation-mode controller` only when controller wrist rotation should
+also become an IK target.
+
+The GUI client runs IK and physics independently from a spawned DIRECT-mode
+render client. The render client mirrors the latest Panda joint and workpiece
+poses, preventing RGB-D rendering from blocking the high-frequency control
+loop.
+
 The simulated optical camera is rigidly mounted to Panda link 11 with the
 default transform:
 

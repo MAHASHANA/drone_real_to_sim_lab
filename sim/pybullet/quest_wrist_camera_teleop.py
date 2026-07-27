@@ -8,9 +8,12 @@ import math
 import time
 from pathlib import Path
 
-import cv2
-import numpy as np
-
+from async_wrist_renderer import (
+    PANDA_RENDER_JOINTS,
+    AsyncWristRenderer,
+    RenderSnapshot,
+    create_workcell,
+)
 from pybullet_utils import add_debug_axes, connect_pybullet
 from quest_webxr_server import (
     MotionRecorder,
@@ -37,85 +40,6 @@ from robot_arm_pybullet import (
 from wrist_rgbd_camera import WristCameraConfig, WristRgbdCamera
 
 
-def create_box(
-    p,
-    client_id: int,
-    half_extents,
-    position,
-    color,
-    mass: float = 0.0,
-) -> int:
-    collision = p.createCollisionShape(
-        p.GEOM_BOX,
-        halfExtents=half_extents,
-        physicsClientId=client_id,
-    )
-    visual = p.createVisualShape(
-        p.GEOM_BOX,
-        halfExtents=half_extents,
-        rgbaColor=color,
-        physicsClientId=client_id,
-    )
-    return p.createMultiBody(
-        baseMass=mass,
-        baseCollisionShapeIndex=collision,
-        baseVisualShapeIndex=visual,
-        basePosition=position,
-        physicsClientId=client_id,
-    )
-
-
-def create_workcell(p, client_id: int) -> list[int]:
-    bodies = [
-        create_box(
-            p,
-            client_id,
-            half_extents=[0.46, 0.38, 0.025],
-            position=[0.0, -0.36, -0.025],
-            color=[0.22, 0.25, 0.27, 1.0],
-        )
-    ]
-    block_specs = [
-        ([-0.13, -0.40, 0.025], [0.05, 0.035, 0.025], [0.12, 0.55, 0.95, 1.0]),
-        ([0.02, -0.36, 0.035], [0.04, 0.04, 0.035], [0.95, 0.35, 0.15, 1.0]),
-        ([0.15, -0.46, 0.02], [0.055, 0.025, 0.02], [0.25, 0.82, 0.43, 1.0]),
-    ]
-    for position, half_extents, color in block_specs:
-        bodies.append(
-            create_box(
-                p,
-                client_id,
-                half_extents=half_extents,
-                position=position,
-                color=color,
-                mass=0.05,
-            )
-        )
-    return bodies
-
-
-def encode_jpeg(image: np.ndarray, quality: int) -> bytes:
-    ok, encoded = cv2.imencode(
-        ".jpg",
-        image,
-        [cv2.IMWRITE_JPEG_QUALITY, quality],
-    )
-    if not ok:
-        raise RuntimeError("JPEG encoding failed")
-    return encoded.tobytes()
-
-
-def colorize_depth(depth_m: np.ndarray, near_m: float, far_m: float) -> np.ndarray:
-    valid = np.isfinite(depth_m) & (depth_m >= near_m) & (depth_m < far_m * 0.999)
-    normalized = np.zeros(depth_m.shape, dtype=np.uint8)
-    if np.any(valid):
-        scaled = (depth_m[valid] - near_m) / (far_m - near_m)
-        normalized[valid] = np.clip(scaled * 255.0, 0.0, 255.0).astype(np.uint8)
-    colorized = cv2.applyColorMap(255 - normalized, cv2.COLORMAP_TURBO)
-    colorized[~valid] = 0
-    return colorized
-
-
 def demo_target(home, elapsed: float) -> tuple[float, float, float]:
     return (
         home[0] + 0.10 * math.sin(elapsed * 0.65),
@@ -132,7 +56,7 @@ def run_simulation(
     p, client_id = connect_pybullet(gui=args.gui)
     p.loadURDF("plane.urdf", physicsClientId=client_id)
     add_debug_axes(p, client_id)
-    create_workcell(p, client_id)
+    workcell_bodies = create_workcell(p, client_id)
     panda_id = load_panda(p, client_id, (0.0, -0.78, 0.0), math.radians(90.0))
     if args.gui:
         configure_robot_camera(p, client_id, arms=1)
@@ -145,7 +69,7 @@ def run_simulation(
         far_m=args.camera_far,
         link_to_camera_xyz=(args.camera_mount_x, args.camera_mount_y, args.camera_mount_z),
     )
-    wrist_camera = WristRgbdCamera(
+    debug_camera = WristRgbdCamera(
         p,
         client_id,
         panda_id,
@@ -153,6 +77,12 @@ def run_simulation(
         camera_config,
         show_frustum=args.gui,
     )
+    renderer = AsyncWristRenderer(
+        camera_config,
+        args.camera_fps,
+        args.jpeg_quality,
+    )
+    renderer.start()
 
     home = (args.home_x, args.home_y, args.home_z)
     home_orientation = tuple(p.getQuaternionFromEuler([math.pi, 0.0, math.pi / 2.0]))
@@ -161,9 +91,14 @@ def run_simulation(
     quest_orientation_origin = None
     rest_pose = None
     started = time.monotonic()
-    next_camera_time = started
-    camera_period = 1.0 / args.camera_fps
+    next_snapshot_time = started
+    snapshot_period = 1.0 / max(30.0, args.camera_fps * 2.0)
+    snapshot_sequence = 0
     camera_frames = 0
+    control_steps = 0
+    last_render_ms = 0.0
+    last_frame_latency_ms = 0.0
+    render_error = None
     last_report = started
     target = home
 
@@ -235,25 +170,56 @@ def run_simulation(
             )
 
             p.stepSimulation(physicsClientId=client_id)
-            if now >= next_camera_time:
-                rgb, depth_m = wrist_camera.render()
+            control_steps += 1
+
+            if now >= next_snapshot_time:
+                joint_states = p.getJointStates(
+                    panda_id,
+                    PANDA_RENDER_JOINTS,
+                    physicsClientId=client_id,
+                )
+                body_poses = tuple(
+                    p.getBasePositionAndOrientation(
+                        body_id,
+                        physicsClientId=client_id,
+                    )
+                    for body_id in workcell_bodies
+                )
+                snapshot_sequence += 1
+                renderer.publish(
+                    RenderSnapshot(
+                        sequence=snapshot_sequence,
+                        source_time=now,
+                        joint_positions=tuple(state[0] for state in joint_states),
+                        body_poses=body_poses,
+                    )
+                )
+                next_snapshot_time = now + snapshot_period
+                if args.gui:
+                    debug_camera.update_debug_frustum()
+
+            for rendered in renderer.receive():
+                if rendered["kind"] == "error":
+                    render_error = rendered["traceback"]
+                    continue
                 frame_state.update_color(
-                    encode_jpeg(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), args.jpeg_quality),
-                    camera_config.width,
-                    camera_config.height,
+                    rendered["color_jpeg"],
+                    rendered["width"],
+                    rendered["height"],
                 )
                 frame_state.update_depth(
-                    encode_jpeg(
-                        colorize_depth(depth_m, camera_config.near_m, camera_config.far_m),
-                        args.jpeg_quality,
-                    ),
-                    camera_config.width,
-                    camera_config.height,
+                    rendered["depth_jpeg"],
+                    rendered["width"],
+                    rendered["height"],
                 )
                 camera_frames += 1
-                next_camera_time = now + camera_period
+                last_render_ms = rendered["render_ms"]
+                last_frame_latency_ms = (
+                    time.monotonic() - rendered["source_time"]
+                ) * 1000.0
 
             if now - last_report >= 5.0:
+                report_period = now - last_report
                 ee_state = p.getLinkState(
                     panda_id,
                     PANDA_EE_LINK,
@@ -261,17 +227,25 @@ def run_simulation(
                     physicsClientId=client_id,
                 )
                 print(
-                    f"sim camera={camera_frames / (now - last_report):.1f} FPS",
+                    f"control={control_steps / report_period:.1f} Hz",
+                    f"camera={camera_frames / report_period:.1f} FPS",
+                    f"render={last_render_ms:.1f} ms",
+                    f"frame_latency={last_frame_latency_ms:.1f} ms",
                     f"quest_packets={snapshot['packets']}",
                     f"target={tuple(round(v, 3) for v in target)}",
                     f"ee={tuple(round(v, 3) for v in ee_state[4])}",
                 )
                 camera_frames = 0
+                control_steps = 0
                 last_report = now
+                if render_error is not None:
+                    print("Camera render process failed:\n" + render_error)
+                    render_error = None
             time.sleep(1.0 / 240.0)
     except KeyboardInterrupt:
         pass
     finally:
+        renderer.close()
         p.disconnect(physicsClientId=client_id)
 
 
@@ -288,7 +262,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--home-y", type=float, default=-0.42)
     parser.add_argument("--home-z", type=float, default=0.30)
     parser.add_argument("--max-velocity", type=float, default=1.0)
-    parser.add_argument("--orientation-mode", choices=["fixed", "controller"], default="controller")
+    parser.add_argument("--orientation-mode", choices=["fixed", "controller"], default="fixed")
     parser.add_argument("--camera-width", type=int, default=320)
     parser.add_argument("--camera-height", type=int, default=180)
     parser.add_argument("--camera-fps", type=float, default=10.0)
