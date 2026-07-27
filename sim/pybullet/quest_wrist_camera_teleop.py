@@ -344,7 +344,10 @@ def run_simulation(
             else:
                 thumbstick_was_pressed = False
 
-            if secondary_rising and assisted_pick.phase != "idle":
+            release_requested = secondary_rising or (
+                primary_rising and assisted_pick.phase == "held"
+            )
+            if release_requested and assisted_pick.phase != "idle":
                 if assisted_pick.constraint_id is not None:
                     p.removeConstraint(
                         assisted_pick.constraint_id,
@@ -362,7 +365,7 @@ def run_simulation(
                 teleop_state.request_haptic(0.4, 70, f"assist-released:{released_name}")
                 print("Assisted pick released:", released_name)
 
-            if primary_rising:
+            if primary_rising and not release_requested:
                 if assisted_pick.phase != "idle":
                     teleop_state.request_haptic(0.18, 80, "assist-busy")
                 else:

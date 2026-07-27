@@ -189,7 +189,8 @@ The right thumbstick provides fine adjustment on top of motion tracking:
   moving the robot target.
 - Pressing right A near a workpiece starts an assisted pick: align above the
   nearest object, descend, close, verify two-finger contact, and lift.
-- Pressing right B cancels an active pick or releases the held workpiece.
+- Pressing right A again releases a completed assisted pick. Right B also
+  cancels an active pick or releases the held workpiece when Quest reports it.
 
 The right controller gives a light haptic pulse when either finger contacts a
 workpiece and a stronger pulse after both fingers maintain contact while the
