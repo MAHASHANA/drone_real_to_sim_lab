@@ -173,9 +173,10 @@ python3 sim/pybullet/quest_wrist_camera_teleop.py \
 
 Open `https://10.0.0.6:8443/` in Meta Quest Browser and select **Enter VR
 Workcell**. The right controller drives the Panda end-effector through IK;
-trigger or grip closes the gripper. The left-controller ray can select either
-RGB-D panel, and holding left grip attaches that panel to the controller for
-repositioning.
+trigger or grip closes the gripper. The wrist color, wrist depth, and fixed
+side-contact views appear as separate panels. The left-controller ray can
+select any panel, and holding left grip attaches that panel to the controller
+for repositioning.
 
 Position teleoperation keeps the end-effector orientation fixed by default.
 Add `--orientation-mode controller` only when controller wrist rotation should

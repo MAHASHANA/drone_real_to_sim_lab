@@ -619,6 +619,11 @@ def run_simulation(
                     rendered["width"],
                     rendered["height"],
                 )
+                frame_state.update_side(
+                    rendered["side_jpeg"],
+                    rendered["width"],
+                    rendered["height"],
+                )
                 camera_frames += 1
                 last_render_ms = rendered["render_ms"]
                 last_frame_latency_ms = (

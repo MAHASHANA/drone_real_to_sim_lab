@@ -120,6 +120,35 @@ def colorize_depth(depth_m: np.ndarray, near_m: float, far_m: float) -> np.ndarr
     return colorized
 
 
+def render_side_view(p, client_id: int, camera_config: WristCameraConfig) -> np.ndarray:
+    view_matrix = p.computeViewMatrix(
+        cameraEyePosition=[0.50, -0.39, 0.18],
+        cameraTargetPosition=[0.0, -0.39, 0.15],
+        cameraUpVector=[0.0, 0.0, 1.0],
+    )
+    projection_matrix = p.computeProjectionMatrixFOV(
+        fov=38.0,
+        aspect=camera_config.width / camera_config.height,
+        nearVal=camera_config.near_m,
+        farVal=camera_config.far_m,
+    )
+    image = p.getCameraImage(
+        width=camera_config.width,
+        height=camera_config.height,
+        viewMatrix=view_matrix,
+        projectionMatrix=projection_matrix,
+        renderer=p.ER_TINY_RENDERER,
+        flags=p.ER_NO_SEGMENTATION_MASK,
+        physicsClientId=client_id,
+    )
+    rgba = np.asarray(image[2], dtype=np.uint8).reshape(
+        camera_config.height,
+        camera_config.width,
+        4,
+    )
+    return rgba[:, :, :3].copy()
+
+
 def _put_latest(target_queue, value) -> None:
     try:
         target_queue.put_nowait(value)
@@ -206,12 +235,17 @@ def _render_process(
             _apply_snapshot(p, client_id, panda_id, bodies, latest_snapshot)
             render_started = time.monotonic()
             rgb, depth_m = camera.render()
+            side_rgb = render_side_view(p, client_id, camera_config)
             color_jpeg = encode_jpeg(
                 cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR),
                 jpeg_quality,
             )
             depth_jpeg = encode_jpeg(
                 colorize_depth(depth_m, camera_config.near_m, camera_config.far_m),
+                jpeg_quality,
+            )
+            side_jpeg = encode_jpeg(
+                cv2.cvtColor(side_rgb, cv2.COLOR_RGB2BGR),
                 jpeg_quality,
             )
             completed = time.monotonic()
@@ -225,6 +259,7 @@ def _render_process(
                     "render_ms": (completed - render_started) * 1000.0,
                     "color_jpeg": color_jpeg,
                     "depth_jpeg": depth_jpeg,
+                    "side_jpeg": side_jpeg,
                     "width": camera_config.width,
                     "height": camera_config.height,
                 },

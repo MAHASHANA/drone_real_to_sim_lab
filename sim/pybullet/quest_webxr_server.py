@@ -767,6 +767,89 @@ SIM_WRIST_HTML = (
         "In VR, point at a panel and hold grip to move it.",
         "The right controller drives the Panda. Point with the left controller and hold grip to move a panel.",
     )
+    .replace(
+        '<figure><canvas id="depth" class="feed-canvas" width="16" height="9"></canvas><figcaption>Aligned depth</figcaption></figure>',
+        '<figure><canvas id="depth" class="feed-canvas" width="16" height="9"></canvas><figcaption>Wrist depth</figcaption></figure>\n'
+        '    <figure><canvas id="side" class="feed-canvas" width="16" height="9"></canvas><figcaption>Side contact view</figcaption></figure>',
+    )
+    .replace(
+        'const depthCanvas = document.getElementById("depth");',
+        'const depthCanvas = document.getElementById("depth");\n'
+        'const sideCanvas = document.getElementById("side");',
+    )
+    .replace(
+        "let lastDepthSeq = -1;",
+        "let lastDepthSeq = -1;\nlet lastSideSeq = -1;",
+    )
+    .replace(
+        "const depthLoader = {\n"
+        "  canvas: depthCanvas,\n"
+        '  context: depthCanvas.getContext("2d"),\n'
+        "  texture: depthTexture,\n"
+        "  loading: false,\n"
+        "  pendingSeq: 0\n"
+        "};",
+        "const depthLoader = {\n"
+        "  canvas: depthCanvas,\n"
+        '  context: depthCanvas.getContext("2d"),\n'
+        "  texture: depthTexture,\n"
+        "  loading: false,\n"
+        "  pendingSeq: 0\n"
+        "};\n"
+        "const sideTexture = makeTexture(true);\n"
+        "const sideLoader = {\n"
+        "  canvas: sideCanvas,\n"
+        '  context: sideCanvas.getContext("2d"),\n'
+        "  texture: sideTexture,\n"
+        "  loading: false,\n"
+        "  pendingSeq: 0\n"
+        "};",
+    )
+    .replace(
+        "const depthPanel = createPanel(depthTexture, 0xffc857);",
+        "const depthPanel = createPanel(depthTexture, 0xffc857);\n"
+        "const sidePanel = createPanel(sideTexture, 0x67e8a5);",
+    )
+    .replace(
+        "  colorPanel.position.copy(center).addScaledVector(right, -0.4);\n"
+        "  depthPanel.position.copy(center).addScaledVector(right, 0.4);\n"
+        "  colorPanel.lookAt(headPosition);\n"
+        "  depthPanel.lookAt(headPosition);",
+        "  colorPanel.position.copy(center).addScaledVector(right, -0.76);\n"
+        "  depthPanel.position.copy(center);\n"
+        "  sidePanel.position.copy(center).addScaledVector(right, 0.76);\n"
+        "  colorPanel.lookAt(headPosition);\n"
+        "  depthPanel.lookAt(headPosition);\n"
+        "  sidePanel.lookAt(headPosition);",
+    )
+    .replace(
+        "    if (state.depth_seq !== lastDepthSeq && state.depth_seq > 0) {\n"
+        "      lastDepthSeq = state.depth_seq;\n"
+        '      requestFrame(depthLoader, "/realsense/depth.jpg", state.depth_seq);\n'
+        "    }\n"
+        '    const colorAge = state.color_age_s === null ? "none" : `${state.color_age_s.toFixed(2)} s`;',
+        "    if (state.depth_seq !== lastDepthSeq && state.depth_seq > 0) {\n"
+        "      lastDepthSeq = state.depth_seq;\n"
+        '      requestFrame(depthLoader, "/realsense/depth.jpg", state.depth_seq);\n'
+        "    }\n"
+        "    if (state.side_seq !== lastSideSeq && state.side_seq > 0) {\n"
+        "      lastSideSeq = state.side_seq;\n"
+        '      requestFrame(sideLoader, "/realsense/side.jpg", state.side_seq);\n'
+        "    }\n"
+        '    const colorAge = state.color_age_s === null ? "none" : `${state.color_age_s.toFixed(2)} s`;',
+    )
+    .replace(
+        '    const depthAge = state.depth_age_s === null ? "none" : `${state.depth_age_s.toFixed(2)} s`;\n'
+        "    statusEl.textContent =\n"
+        '      `color frame=${state.color_seq} ${state.color_width}x${state.color_height} age=${colorAge}\\n` +\n'
+        '      `depth frame=${state.depth_seq} ${state.depth_width}x${state.depth_height} age=${depthAge}`;',
+        '    const depthAge = state.depth_age_s === null ? "none" : `${state.depth_age_s.toFixed(2)} s`;\n'
+        '    const sideAge = state.side_age_s === null ? "none" : `${state.side_age_s.toFixed(2)} s`;\n'
+        "    statusEl.textContent =\n"
+        '      `wrist color frame=${state.color_seq} ${state.color_width}x${state.color_height} age=${colorAge}\\n` +\n'
+        '      `wrist depth frame=${state.depth_seq} ${state.depth_width}x${state.depth_height} age=${depthAge}\\n` +\n'
+        '      `side view frame=${state.side_seq} ${state.side_width}x${state.side_height} age=${sideAge}`;',
+    )
 )
 
 
@@ -1064,14 +1147,19 @@ class SensorFrameState:
     lock: threading.Lock = field(default_factory=threading.Lock)
     color_jpeg: bytes | None = None
     depth_jpeg: bytes | None = None
+    side_jpeg: bytes | None = None
     color_seq: int = 0
     depth_seq: int = 0
+    side_seq: int = 0
     color_time: float = 0.0
     depth_time: float = 0.0
+    side_time: float = 0.0
     color_width: int = 0
     color_height: int = 0
     depth_width: int = 0
     depth_height: int = 0
+    side_width: int = 0
+    side_height: int = 0
 
     def update_color(self, jpeg: bytes, width: int, height: int) -> None:
         with self.lock:
@@ -1089,12 +1177,22 @@ class SensorFrameState:
             self.depth_width = int(width)
             self.depth_height = int(height)
 
+    def update_side(self, jpeg: bytes, width: int, height: int) -> None:
+        with self.lock:
+            self.side_jpeg = jpeg
+            self.side_seq += 1
+            self.side_time = time.time()
+            self.side_width = int(width)
+            self.side_height = int(height)
+
     def image_snapshot(self, stream: str) -> bytes | None:
         with self.lock:
             if stream == "color":
                 return self.color_jpeg
             if stream == "depth":
                 return self.depth_jpeg
+            if stream == "side":
+                return self.side_jpeg
             raise ValueError(f"Unknown sensor stream: {stream}")
 
     def snapshot(self) -> dict:
@@ -1103,12 +1201,16 @@ class SensorFrameState:
             return {
                 "color_seq": self.color_seq,
                 "depth_seq": self.depth_seq,
+                "side_seq": self.side_seq,
                 "color_age_s": now - self.color_time if self.color_time else None,
                 "depth_age_s": now - self.depth_time if self.depth_time else None,
+                "side_age_s": now - self.side_time if self.side_time else None,
                 "color_width": self.color_width,
                 "color_height": self.color_height,
                 "depth_width": self.depth_width,
                 "depth_height": self.depth_height,
+                "side_width": self.side_width,
+                "side_height": self.side_height,
             }
 
 
@@ -1215,11 +1317,15 @@ def make_handler(
                 self.end_headers()
                 self.wfile.write(body)
                 return
-            if path in ("/realsense/color.jpg", "/realsense/depth.jpg"):
+            if path in (
+                "/realsense/color.jpg",
+                "/realsense/depth.jpg",
+                "/realsense/side.jpg",
+            ):
                 if sensor_state is None:
                     self.send_error(503, "RealSense bridge is not running")
                     return
-                stream = "color" if path.endswith("color.jpg") else "depth"
+                stream = Path(path).stem
                 body = sensor_state.image_snapshot(stream)
                 if body is None:
                     self.send_error(503, f"No {stream} frame received")
