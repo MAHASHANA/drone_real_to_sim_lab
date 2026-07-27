@@ -168,7 +168,7 @@ def quest_to_robot(
     return (
         max(-0.35, min(0.35, x)),
         max(-0.72, min(0.02, y)),
-        max(0.08, min(0.65, z)),
+        max(0.05, min(0.65, z)),
     )
 
 

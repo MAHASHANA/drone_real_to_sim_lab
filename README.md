@@ -181,6 +181,18 @@ Position teleoperation keeps the end-effector orientation fixed by default.
 Add `--orientation-mode controller` only when controller wrist rotation should
 also become an IK target.
 
+The right thumbstick provides fine adjustment on top of motion tracking:
+
+- Left/right adds a bounded world-X offset.
+- Forward/back adds a bounded tool-axis approach/retract offset.
+- Pressing the thumbstick captures a new controller neutral pose without
+  moving the robot target.
+
+The right controller gives a light haptic pulse when either finger contacts a
+workpiece and a stronger pulse after both fingers maintain contact while the
+gripper is commanded closed. This confirms simulated contact geometry, not
+force-closure or a guaranteed stable physical grasp.
+
 The GUI client runs IK and physics independently from a spawned DIRECT-mode
 render client. The render client mirrors the latest Panda joint and workpiece
 poses, preventing RGB-D rendering from blocking the high-frequency control

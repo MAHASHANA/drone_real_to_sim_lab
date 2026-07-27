@@ -24,6 +24,7 @@ from wrist_rgbd_camera import WristCameraConfig, WristRgbdCamera
 
 
 PANDA_RENDER_JOINTS = tuple(PANDA_ARM_JOINTS + PANDA_FINGER_JOINTS)
+WORKCELL_BODY_NAMES = ("table", "blue_block", "orange_block", "green_block")
 
 
 @dataclass(frozen=True)

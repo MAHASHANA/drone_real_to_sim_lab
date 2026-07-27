@@ -218,6 +218,18 @@ function buttonState(gamepad, index) {
   return {pressed: !!b.pressed, value: b.value || 0};
 }
 
+function thumbstickState(gamepad) {
+  if (!gamepad || !gamepad.axes || gamepad.axes.length < 2) {
+    return {x: 0, y: 0, pressed: false};
+  }
+  const axisOffset = Math.max(0, gamepad.axes.length - 2);
+  return {
+    x: gamepad.axes[axisOffset] || 0,
+    y: gamepad.axes[axisOffset + 1] || 0,
+    pressed: buttonState(gamepad, 3).pressed
+  };
+}
+
 function sourceName(source) {
   if (source.handedness === "left") return "left";
   if (source.handedness === "right") return "right";
@@ -268,6 +280,7 @@ function onFrame(t, frame) {
       orientation: [q.x, q.y, q.z, q.w],
       trigger: buttonState(gp, 0),
       grip: buttonState(gp, 1),
+      thumbstick: thumbstickState(gp),
       primary: buttonState(gp, 4),
       secondary: buttonState(gp, 5)
     };
@@ -410,6 +423,18 @@ function buttonState(gamepad, index) {
   return {pressed: !!button.pressed, value: button.value || 0};
 }
 
+function thumbstickState(gamepad) {
+  if (!gamepad || !gamepad.axes || gamepad.axes.length < 2) {
+    return {x: 0, y: 0, pressed: false};
+  }
+  const axisOffset = Math.max(0, gamepad.axes.length - 2);
+  return {
+    x: gamepad.axes[axisOffset] || 0,
+    y: gamepad.axes[axisOffset + 1] || 0,
+    pressed: buttonState(gamepad, 3).pressed
+  };
+}
+
 function sourceName(source) {
   if (source.handedness === "left") return "left";
   if (source.handedness === "right") return "right";
@@ -451,6 +476,7 @@ function sendControllerState(time, frame) {
       orientation: [orientation.x, orientation.y, orientation.z, orientation.w],
       trigger: buttonState(source.gamepad, 0),
       grip: buttonState(source.gamepad, 1),
+      thumbstick: thumbstickState(source.gamepad),
       primary: buttonState(source.gamepad, 4),
       secondary: buttonState(source.gamepad, 5)
     };
@@ -864,6 +890,8 @@ async function tick() {
       orientation_xyzw: status.right_orientation,
       trigger: status.trigger_value,
       grip: status.grip_value,
+      thumbstick: [status.thumbstick_x, status.thumbstick_y],
+      thumbstick_pressed: status.thumbstick_pressed,
       samples: history.length,
       min_xyz: mins,
       max_xyz: maxs
@@ -890,6 +918,9 @@ class TeleopState:
     right_orientation: tuple[float, float, float, float] | None = None
     grip_value: float = 0.0
     trigger_value: float = 0.0
+    thumbstick_x: float = 0.0
+    thumbstick_y: float = 0.0
+    thumbstick_pressed: bool = False
     packets: int = 0
     last_time: float = 0.0
     haptic_seq: int = 0
@@ -925,6 +956,7 @@ class TeleopState:
             return
         position = right.get("position")
         orientation = right.get("orientation")
+        thumbstick = right.get("thumbstick", {})
         if not position or len(position) != 3:
             return
         with self.lock:
@@ -933,6 +965,9 @@ class TeleopState:
                 self.right_orientation = tuple(float(v) for v in orientation)
             self.trigger_value = float(right.get("trigger", {}).get("value", 0.0))
             self.grip_value = float(right.get("grip", {}).get("value", 0.0))
+            self.thumbstick_x = max(-1.0, min(1.0, float(thumbstick.get("x", 0.0))))
+            self.thumbstick_y = max(-1.0, min(1.0, float(thumbstick.get("y", 0.0))))
+            self.thumbstick_pressed = bool(thumbstick.get("pressed", False))
             self.packets += 1
             self.last_time = time.time()
             sample = {
@@ -941,6 +976,9 @@ class TeleopState:
                 "orientation": self.right_orientation,
                 "trigger": self.trigger_value,
                 "grip": self.grip_value,
+                "thumbstick_x": self.thumbstick_x,
+                "thumbstick_y": self.thumbstick_y,
+                "thumbstick_pressed": self.thumbstick_pressed,
                 "packets": self.packets,
             }
             if self.recorder is not None:
@@ -956,6 +994,7 @@ class TeleopState:
                     f"pos={tuple(round(v, 3) for v in self.right_position)}",
                     f"trigger={self.trigger_value:.2f}",
                     f"grip={self.grip_value:.2f}",
+                    f"stick=({self.thumbstick_x:.2f},{self.thumbstick_y:.2f})",
                 )
 
     def snapshot(self) -> dict:
@@ -965,6 +1004,9 @@ class TeleopState:
                 "right_orientation": self.right_orientation,
                 "grip_value": self.grip_value,
                 "trigger_value": self.trigger_value,
+                "thumbstick_x": self.thumbstick_x,
+                "thumbstick_y": self.thumbstick_y,
+                "thumbstick_pressed": self.thumbstick_pressed,
                 "packets": self.packets,
                 "last_time": self.last_time,
                 "haptic_seq": self.haptic_seq,

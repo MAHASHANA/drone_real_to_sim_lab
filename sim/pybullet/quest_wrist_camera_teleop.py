@@ -10,6 +10,7 @@ from pathlib import Path
 
 from async_wrist_renderer import (
     PANDA_RENDER_JOINTS,
+    WORKCELL_BODY_NAMES,
     AsyncWristRenderer,
     RenderSnapshot,
     create_workcell,
@@ -38,6 +39,53 @@ from robot_arm_pybullet import (
     solve_ik,
 )
 from wrist_rgbd_camera import WristCameraConfig, WristRgbdCamera
+
+
+PANDA_FINGER_LINKS = frozenset((9, 10))
+
+
+def apply_deadzone(value: float, deadzone: float) -> float:
+    magnitude = abs(value)
+    if magnitude <= deadzone:
+        return 0.0
+    scaled = (magnitude - deadzone) / (1.0 - deadzone)
+    return math.copysign(min(1.0, scaled), value)
+
+
+def clamp_workspace(target) -> tuple[float, float, float]:
+    return (
+        max(-0.35, min(0.35, target[0])),
+        max(-0.72, min(0.02, target[1])),
+        max(0.05, min(0.65, target[2])),
+    )
+
+
+def gripper_contact_state(
+    p,
+    client_id: int,
+    panda_id: int,
+    object_bodies: list[int],
+    force_threshold: float,
+) -> tuple[int | None, int | None]:
+    touching_body = None
+    two_finger_body = None
+    for body_id in object_bodies:
+        finger_links = {
+            int(contact[3])
+            for contact in p.getContactPoints(
+                bodyA=panda_id,
+                bodyB=body_id,
+                physicsClientId=client_id,
+            )
+            if int(contact[3]) in PANDA_FINGER_LINKS
+            and float(contact[9]) >= force_threshold
+        }
+        if finger_links and touching_body is None:
+            touching_body = body_id
+        if PANDA_FINGER_LINKS.issubset(finger_links):
+            two_finger_body = body_id
+            break
+    return touching_body, two_finger_body
 
 
 def demo_target(home, elapsed: float) -> tuple[float, float, float]:
@@ -87,10 +135,15 @@ def run_simulation(
     home = (args.home_x, args.home_y, args.home_z)
     home_orientation = tuple(p.getQuaternionFromEuler([math.pi, 0.0, math.pi / 2.0]))
     home_rotation = quat_to_matrix(home_orientation)
+    orientation_anchor_rotation = home_rotation
+    motion_anchor = home
     quest_origin = None
     quest_orientation_origin = None
+    fine_offset = [0.0, 0.0, 0.0]
+    thumbstick_was_pressed = False
     rest_pose = None
     started = time.monotonic()
+    previous_control_time = started
     next_snapshot_time = started
     snapshot_period = 1.0 / max(30.0, args.camera_fps * 2.0)
     snapshot_sequence = 0
@@ -101,6 +154,12 @@ def run_simulation(
     render_error = None
     last_report = started
     target = home
+    last_touch_body = None
+    grasp_candidate_body = None
+    grasp_candidate_since = 0.0
+    confirmed_grasp_body = None
+    last_haptic_time = 0.0
+    body_names = dict(zip(workcell_bodies, WORKCELL_BODY_NAMES))
 
     print(
         "Wrist camera mount T_EE_C:",
@@ -110,18 +169,24 @@ def run_simulation(
     try:
         while args.run_seconds <= 0 or time.monotonic() - started < args.run_seconds:
             now = time.monotonic()
+            control_dt = min(0.05, max(0.0, now - previous_control_time))
+            previous_control_time = now
             snapshot = teleop_state.snapshot()
             quest_position = snapshot["right_position"]
             desired_orientation = home_orientation
+            packet_fresh = (
+                snapshot["last_time"] > 0.0
+                and time.time() - snapshot["last_time"] <= args.controller_timeout
+            )
 
             if quest_position is not None:
                 if quest_origin is None:
                     quest_origin = quest_position
                     print(f"Quest controller origin: {tuple(round(v, 3) for v in quest_origin)}")
-                target = quest_to_robot(
+                base_target = quest_to_robot(
                     quest_position,
                     quest_origin,
-                    home,
+                    motion_anchor,
                     args.scale,
                 )
                 quest_orientation = snapshot["right_orientation"]
@@ -141,10 +206,54 @@ def run_simulation(
                         quest_orientation_origin,
                     )
                     desired_orientation = matrix_to_quat(
-                        matmul(home_rotation, relative_rotation)
+                        matmul(orientation_anchor_rotation, relative_rotation)
                     )
+                thumbstick_pressed = (
+                    packet_fresh and snapshot["thumbstick_pressed"]
+                )
+                if thumbstick_pressed and not thumbstick_was_pressed:
+                    motion_anchor = clamp_workspace(
+                        tuple(base_target[i] + fine_offset[i] for i in range(3))
+                    )
+                    quest_origin = quest_position
+                    fine_offset = [0.0, 0.0, 0.0]
+                    base_target = motion_anchor
+                    if quest_orientation is not None:
+                        orientation_anchor_rotation = quat_to_matrix(desired_orientation)
+                        quest_orientation_origin = quest_orientation
+                    teleop_state.request_haptic(0.35, 35, "controller-recentered")
+                    print(
+                        "Quest controller recentered:",
+                        tuple(round(v, 3) for v in motion_anchor),
+                    )
+                thumbstick_was_pressed = thumbstick_pressed
+
+                stick_x = apply_deadzone(
+                    snapshot["thumbstick_x"] if packet_fresh else 0.0,
+                    args.joystick_deadzone,
+                )
+                stick_y = apply_deadzone(
+                    snapshot["thumbstick_y"] if packet_fresh else 0.0,
+                    args.joystick_deadzone,
+                )
+                desired_rotation = quat_to_matrix(desired_orientation)
+                tool_approach_axis = [desired_rotation[i][2] for i in range(3)]
+                for axis in range(3):
+                    fine_offset[axis] += (
+                        (1.0 if axis == 0 else 0.0) * stick_x
+                        + tool_approach_axis[axis] * -stick_y
+                    ) * args.joystick_speed * control_dt
+                    fine_offset[axis] = max(
+                        -args.joystick_max_offset,
+                        min(args.joystick_max_offset, fine_offset[axis]),
+                    )
+                target = clamp_workspace(
+                    tuple(base_target[i] + fine_offset[i] for i in range(3))
+                )
             elif args.demo_motion:
                 target = demo_target(home, now - started)
+            else:
+                thumbstick_was_pressed = False
 
             rest_pose = solve_ik(
                 p,
@@ -161,7 +270,10 @@ def run_simulation(
                 rest_pose,
                 max_velocity=args.max_velocity,
             )
-            gripper_closed = max(snapshot["grip_value"], snapshot["trigger_value"]) > 0.25
+            gripper_closed = (
+                packet_fresh
+                and max(snapshot["grip_value"], snapshot["trigger_value"]) > 0.25
+            )
             set_gripper(
                 p,
                 client_id,
@@ -171,6 +283,60 @@ def run_simulation(
 
             p.stepSimulation(physicsClientId=client_id)
             control_steps += 1
+
+            touching_body, two_finger_body = gripper_contact_state(
+                p,
+                client_id,
+                panda_id,
+                workcell_bodies[1:],
+                args.contact_force_threshold,
+            )
+            if (
+                touching_body is not None
+                and touching_body != last_touch_body
+                and now - last_haptic_time >= args.haptic_interval
+            ):
+                teleop_state.request_haptic(
+                    0.28,
+                    28,
+                    f"object-contact:{body_names.get(touching_body, touching_body)}",
+                )
+                last_haptic_time = now
+            last_touch_body = touching_body
+
+            if gripper_closed and two_finger_body is not None:
+                if grasp_candidate_body != two_finger_body:
+                    grasp_candidate_body = two_finger_body
+                    grasp_candidate_since = now
+                elif (
+                    confirmed_grasp_body != two_finger_body
+                    and now - grasp_candidate_since >= args.grasp_confirm_time
+                ):
+                    confirmed_grasp_body = two_finger_body
+                    teleop_state.request_haptic(
+                        0.9,
+                        90,
+                        f"grasp-confirmed:{body_names.get(two_finger_body, two_finger_body)}",
+                    )
+                    last_haptic_time = now
+                    print(
+                        "Grasp confirmed:",
+                        body_names.get(two_finger_body, two_finger_body),
+                    )
+            else:
+                grasp_candidate_body = None
+                grasp_candidate_since = 0.0
+                if confirmed_grasp_body is not None:
+                    teleop_state.request_haptic(
+                        0.45,
+                        120,
+                        f"grasp-lost:{body_names.get(confirmed_grasp_body, confirmed_grasp_body)}",
+                    )
+                    print(
+                        "Grasp lost:",
+                        body_names.get(confirmed_grasp_body, confirmed_grasp_body),
+                    )
+                    confirmed_grasp_body = None
 
             if now >= next_snapshot_time:
                 joint_states = p.getJointStates(
@@ -234,6 +400,9 @@ def run_simulation(
                     f"quest_packets={snapshot['packets']}",
                     f"target={tuple(round(v, 3) for v in target)}",
                     f"ee={tuple(round(v, 3) for v in ee_state[4])}",
+                    f"fine={tuple(round(v, 3) for v in fine_offset)}",
+                    f"contact={body_names.get(touching_body, '-')}",
+                    f"grasp={body_names.get(confirmed_grasp_body, '-')}",
                 )
                 camera_frames = 0
                 control_steps = 0
@@ -263,6 +432,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--home-z", type=float, default=0.30)
     parser.add_argument("--max-velocity", type=float, default=1.0)
     parser.add_argument("--orientation-mode", choices=["fixed", "controller"], default="fixed")
+    parser.add_argument("--joystick-speed", type=float, default=0.055)
+    parser.add_argument("--joystick-deadzone", type=float, default=0.16)
+    parser.add_argument("--joystick-max-offset", type=float, default=0.25)
+    parser.add_argument("--controller-timeout", type=float, default=0.25)
+    parser.add_argument("--contact-force-threshold", type=float, default=0.02)
+    parser.add_argument("--grasp-confirm-time", type=float, default=0.08)
+    parser.add_argument("--haptic-interval", type=float, default=0.12)
     parser.add_argument("--camera-width", type=int, default=320)
     parser.add_argument("--camera-height", type=int, default=180)
     parser.add_argument("--camera-fps", type=float, default=10.0)
@@ -282,6 +458,12 @@ def parse_args() -> argparse.Namespace:
         parser.error("--camera-fps must be positive")
     if not 1 <= args.jpeg_quality <= 100:
         parser.error("--jpeg-quality must be between 1 and 100")
+    if not 0.0 <= args.joystick_deadzone < 1.0:
+        parser.error("--joystick-deadzone must be in [0, 1)")
+    if args.joystick_speed <= 0.0 or args.joystick_max_offset <= 0.0:
+        parser.error("joystick speed and maximum offset must be positive")
+    if args.controller_timeout <= 0.0:
+        parser.error("--controller-timeout must be positive")
     return args
 
 
