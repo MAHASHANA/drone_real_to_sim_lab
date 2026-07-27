@@ -710,7 +710,13 @@ function updateControllers(deltaSeconds) {
       }
     }
     const primaryPressed = !!(gamepad.buttons[4] && gamepad.buttons[4].pressed);
-    if (primaryPressed && !controller.userData.primaryPressed) resetRequested = true;
+    if (
+      controller.userData.inputSource.handedness === "left"
+      && primaryPressed
+      && !controller.userData.primaryPressed
+    ) {
+      resetRequested = true;
+    }
     controller.userData.primaryPressed = primaryPressed;
   }
   if (resetRequested) placePanelsInFrontOfViewer();
@@ -892,6 +898,8 @@ async function tick() {
       grip: status.grip_value,
       thumbstick: [status.thumbstick_x, status.thumbstick_y],
       thumbstick_pressed: status.thumbstick_pressed,
+      primary_pressed: status.primary_pressed,
+      secondary_pressed: status.secondary_pressed,
       samples: history.length,
       min_xyz: mins,
       max_xyz: maxs
@@ -921,6 +929,8 @@ class TeleopState:
     thumbstick_x: float = 0.0
     thumbstick_y: float = 0.0
     thumbstick_pressed: bool = False
+    primary_pressed: bool = False
+    secondary_pressed: bool = False
     packets: int = 0
     last_time: float = 0.0
     haptic_seq: int = 0
@@ -968,6 +978,8 @@ class TeleopState:
             self.thumbstick_x = max(-1.0, min(1.0, float(thumbstick.get("x", 0.0))))
             self.thumbstick_y = max(-1.0, min(1.0, float(thumbstick.get("y", 0.0))))
             self.thumbstick_pressed = bool(thumbstick.get("pressed", False))
+            self.primary_pressed = bool(right.get("primary", {}).get("pressed", False))
+            self.secondary_pressed = bool(right.get("secondary", {}).get("pressed", False))
             self.packets += 1
             self.last_time = time.time()
             sample = {
@@ -979,6 +991,8 @@ class TeleopState:
                 "thumbstick_x": self.thumbstick_x,
                 "thumbstick_y": self.thumbstick_y,
                 "thumbstick_pressed": self.thumbstick_pressed,
+                "primary_pressed": self.primary_pressed,
+                "secondary_pressed": self.secondary_pressed,
                 "packets": self.packets,
             }
             if self.recorder is not None:
@@ -1007,6 +1021,8 @@ class TeleopState:
                 "thumbstick_x": self.thumbstick_x,
                 "thumbstick_y": self.thumbstick_y,
                 "thumbstick_pressed": self.thumbstick_pressed,
+                "primary_pressed": self.primary_pressed,
+                "secondary_pressed": self.secondary_pressed,
                 "packets": self.packets,
                 "last_time": self.last_time,
                 "haptic_seq": self.haptic_seq,

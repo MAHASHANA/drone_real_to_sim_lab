@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import math
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from async_wrist_renderer import (
@@ -34,6 +35,7 @@ from robot_arm_pybullet import (
     PANDA_EE_LINK,
     command_joints,
     configure_robot_camera,
+    create_grasp_constraint,
     load_panda,
     set_gripper,
     solve_ik,
@@ -42,6 +44,18 @@ from wrist_rgbd_camera import WristCameraConfig, WristRgbdCamera
 
 
 PANDA_FINGER_LINKS = frozenset((9, 10))
+
+
+@dataclass
+class AssistedPickState:
+    phase: str = "idle"
+    body_id: int | None = None
+    constraint_id: int | None = None
+    target: tuple[float, float, float] | None = None
+    pregrasp: tuple[float, float, float] | None = None
+    grasp: tuple[float, float, float] | None = None
+    phase_started: float = 0.0
+    contact_started: float = 0.0
 
 
 def apply_deadzone(value: float, deadzone: float) -> float:
@@ -58,6 +72,72 @@ def clamp_workspace(target) -> tuple[float, float, float]:
         max(-0.72, min(0.02, target[1])),
         max(0.05, min(0.65, target[2])),
     )
+
+
+def distance(a, b) -> float:
+    return math.sqrt(sum((float(a[i]) - float(b[i])) ** 2 for i in range(3)))
+
+
+def move_toward(current, goal, max_distance: float) -> tuple[float, float, float]:
+    separation = distance(current, goal)
+    if separation <= max_distance or separation <= 1e-9:
+        return tuple(float(v) for v in goal)
+    scale = max_distance / separation
+    return tuple(
+        float(current[i]) + (float(goal[i]) - float(current[i])) * scale
+        for i in range(3)
+    )
+
+
+def nearest_object(
+    p,
+    client_id: int,
+    object_bodies: list[int],
+    position,
+    maximum_distance: float,
+) -> tuple[int | None, float]:
+    nearest_body = None
+    nearest_distance = float("inf")
+    for body_id in object_bodies:
+        body_position, _ = p.getBasePositionAndOrientation(
+            body_id,
+            physicsClientId=client_id,
+        )
+        candidate_distance = distance(position, body_position)
+        if candidate_distance < nearest_distance:
+            nearest_body = body_id
+            nearest_distance = candidate_distance
+    if nearest_distance > maximum_distance:
+        return None, nearest_distance
+    return nearest_body, nearest_distance
+
+
+def grasp_poses(
+    p,
+    client_id: int,
+    body_id: int,
+    approach_height: float,
+) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    body_position, _ = p.getBasePositionAndOrientation(
+        body_id,
+        physicsClientId=client_id,
+    )
+    _, aabb_max = p.getAABB(body_id, physicsClientId=client_id)
+    grasp = clamp_workspace(
+        (
+            body_position[0],
+            body_position[1],
+            aabb_max[2],
+        )
+    )
+    pregrasp = clamp_workspace(
+        (
+            grasp[0],
+            grasp[1],
+            grasp[2] + approach_height,
+        )
+    )
+    return pregrasp, grasp
 
 
 def gripper_contact_state(
@@ -160,6 +240,9 @@ def run_simulation(
     confirmed_grasp_body = None
     last_haptic_time = 0.0
     body_names = dict(zip(workcell_bodies, WORKCELL_BODY_NAMES))
+    assisted_pick = AssistedPickState()
+    primary_was_pressed = False
+    secondary_was_pressed = False
 
     print(
         "Wrist camera mount T_EE_C:",
@@ -178,6 +261,12 @@ def run_simulation(
                 snapshot["last_time"] > 0.0
                 and time.time() - snapshot["last_time"] <= args.controller_timeout
             )
+            primary_pressed = packet_fresh and snapshot["primary_pressed"]
+            secondary_pressed = packet_fresh and snapshot["secondary_pressed"]
+            primary_rising = primary_pressed and not primary_was_pressed
+            secondary_rising = secondary_pressed and not secondary_was_pressed
+            primary_was_pressed = primary_pressed
+            secondary_was_pressed = secondary_pressed
 
             if quest_position is not None:
                 if quest_origin is None:
@@ -255,6 +344,121 @@ def run_simulation(
             else:
                 thumbstick_was_pressed = False
 
+            if secondary_rising and assisted_pick.phase != "idle":
+                if assisted_pick.constraint_id is not None:
+                    p.removeConstraint(
+                        assisted_pick.constraint_id,
+                        physicsClientId=client_id,
+                    )
+                released_name = body_names.get(assisted_pick.body_id, "selection")
+                assisted_pick = AssistedPickState()
+                confirmed_grasp_body = None
+                grasp_candidate_body = None
+                grasp_candidate_since = 0.0
+                motion_anchor = target
+                if quest_position is not None:
+                    quest_origin = quest_position
+                fine_offset = [0.0, 0.0, 0.0]
+                teleop_state.request_haptic(0.4, 70, f"assist-released:{released_name}")
+                print("Assisted pick released:", released_name)
+
+            if primary_rising:
+                if assisted_pick.phase != "idle":
+                    teleop_state.request_haptic(0.18, 80, "assist-busy")
+                else:
+                    ee_position = p.getLinkState(
+                        panda_id,
+                        PANDA_EE_LINK,
+                        computeForwardKinematics=True,
+                        physicsClientId=client_id,
+                    )[4]
+                    selected_body, selection_distance = nearest_object(
+                        p,
+                        client_id,
+                        workcell_bodies[1:],
+                        ee_position,
+                        args.assist_radius,
+                    )
+                    if selected_body is None:
+                        teleop_state.request_haptic(0.18, 130, "assist-no-object-nearby")
+                        print(
+                            "Assisted pick rejected:",
+                            f"nearest object is {selection_distance:.3f} m away",
+                        )
+                    else:
+                        pregrasp, grasp = grasp_poses(
+                            p,
+                            client_id,
+                            selected_body,
+                            args.assist_approach_height,
+                        )
+                        assisted_pick = AssistedPickState(
+                            phase="approach",
+                            body_id=selected_body,
+                            target=tuple(float(v) for v in ee_position),
+                            pregrasp=pregrasp,
+                            grasp=grasp,
+                            phase_started=now,
+                        )
+                        target = assisted_pick.target
+                        teleop_state.request_haptic(
+                            0.42,
+                            45,
+                            f"assist-selected:{body_names.get(selected_body, selected_body)}",
+                        )
+                        print(
+                            "Assisted pick selected:",
+                            body_names.get(selected_body, selected_body),
+                            f"distance={selection_distance:.3f} m",
+                        )
+
+            if assisted_pick.phase == "approach":
+                assisted_pick.target = move_toward(
+                    assisted_pick.target,
+                    assisted_pick.pregrasp,
+                    args.assist_speed * control_dt,
+                )
+                target = assisted_pick.target
+                if distance(target, assisted_pick.pregrasp) <= args.assist_tolerance:
+                    assisted_pick.phase = "descend"
+                    assisted_pick.phase_started = now
+            elif assisted_pick.phase == "descend":
+                assisted_pick.target = move_toward(
+                    assisted_pick.target,
+                    assisted_pick.grasp,
+                    args.assist_descend_speed * control_dt,
+                )
+                target = assisted_pick.target
+                if distance(target, assisted_pick.grasp) <= args.assist_tolerance:
+                    assisted_pick.phase = "close"
+                    assisted_pick.phase_started = now
+                    assisted_pick.contact_started = 0.0
+            elif assisted_pick.phase == "close":
+                target = assisted_pick.grasp
+            elif assisted_pick.phase == "lift":
+                assisted_pick.target = move_toward(
+                    assisted_pick.target,
+                    assisted_pick.pregrasp,
+                    args.assist_speed * control_dt,
+                )
+                target = assisted_pick.target
+                if distance(target, assisted_pick.pregrasp) <= args.assist_tolerance:
+                    assisted_pick.phase = "held"
+                    assisted_pick.phase_started = now
+                    motion_anchor = target
+                    if quest_position is not None:
+                        quest_origin = quest_position
+                    fine_offset = [0.0, 0.0, 0.0]
+                    teleop_state.request_haptic(
+                        0.62,
+                        65,
+                        f"assist-lift-complete:{body_names.get(assisted_pick.body_id, assisted_pick.body_id)}",
+                    )
+                    print(
+                        "Assisted pick complete:",
+                        body_names.get(assisted_pick.body_id, assisted_pick.body_id),
+                    )
+
             rest_pose = solve_ik(
                 p,
                 client_id,
@@ -270,10 +474,16 @@ def run_simulation(
                 rest_pose,
                 max_velocity=args.max_velocity,
             )
-            gripper_closed = (
+            manual_gripper_closed = (
                 packet_fresh
                 and max(snapshot["grip_value"], snapshot["trigger_value"]) > 0.25
             )
+            if assisted_pick.phase in ("approach", "descend"):
+                gripper_closed = False
+            elif assisted_pick.phase in ("close", "lift", "held"):
+                gripper_closed = True
+            else:
+                gripper_closed = manual_gripper_closed
             set_gripper(
                 p,
                 client_id,
@@ -337,6 +547,34 @@ def run_simulation(
                         body_names.get(confirmed_grasp_body, confirmed_grasp_body),
                     )
                     confirmed_grasp_body = None
+
+            if assisted_pick.phase == "close":
+                if confirmed_grasp_body == assisted_pick.body_id:
+                    assisted_pick.constraint_id = create_grasp_constraint(
+                        p,
+                        client_id,
+                        panda_id,
+                        assisted_pick.body_id,
+                    )
+                    assisted_pick.phase = "lift"
+                    assisted_pick.phase_started = now
+                    assisted_pick.target = assisted_pick.grasp
+                elif now - assisted_pick.phase_started >= args.assist_close_timeout:
+                    failed_name = body_names.get(
+                        assisted_pick.body_id,
+                        assisted_pick.body_id,
+                    )
+                    assisted_pick = AssistedPickState()
+                    motion_anchor = target
+                    if quest_position is not None:
+                        quest_origin = quest_position
+                    fine_offset = [0.0, 0.0, 0.0]
+                    teleop_state.request_haptic(
+                        0.2,
+                        160,
+                        f"assist-grasp-failed:{failed_name}",
+                    )
+                    print("Assisted pick failed to establish two-finger contact:", failed_name)
 
             if now >= next_snapshot_time:
                 joint_states = p.getJointStates(
@@ -403,6 +641,7 @@ def run_simulation(
                     f"fine={tuple(round(v, 3) for v in fine_offset)}",
                     f"contact={body_names.get(touching_body, '-')}",
                     f"grasp={body_names.get(confirmed_grasp_body, '-')}",
+                    f"assist={assisted_pick.phase}:{body_names.get(assisted_pick.body_id, '-')}",
                 )
                 camera_frames = 0
                 control_steps = 0
@@ -439,6 +678,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-force-threshold", type=float, default=0.02)
     parser.add_argument("--grasp-confirm-time", type=float, default=0.08)
     parser.add_argument("--haptic-interval", type=float, default=0.12)
+    parser.add_argument("--assist-radius", type=float, default=0.18)
+    parser.add_argument("--assist-approach-height", type=float, default=0.12)
+    parser.add_argument("--assist-speed", type=float, default=0.18)
+    parser.add_argument("--assist-descend-speed", type=float, default=0.075)
+    parser.add_argument("--assist-tolerance", type=float, default=0.004)
+    parser.add_argument("--assist-close-timeout", type=float, default=1.5)
     parser.add_argument("--camera-width", type=int, default=320)
     parser.add_argument("--camera-height", type=int, default=180)
     parser.add_argument("--camera-fps", type=float, default=10.0)
@@ -464,6 +709,15 @@ def parse_args() -> argparse.Namespace:
         parser.error("joystick speed and maximum offset must be positive")
     if args.controller_timeout <= 0.0:
         parser.error("--controller-timeout must be positive")
+    if (
+        args.assist_radius <= 0.0
+        or args.assist_approach_height <= 0.0
+        or args.assist_speed <= 0.0
+        or args.assist_descend_speed <= 0.0
+        or args.assist_tolerance <= 0.0
+        or args.assist_close_timeout <= 0.0
+    ):
+        parser.error("assisted-pick distances, speeds, tolerance, and timeout must be positive")
     return args
 
 

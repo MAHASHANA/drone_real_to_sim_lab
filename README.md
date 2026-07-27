@@ -187,11 +187,18 @@ The right thumbstick provides fine adjustment on top of motion tracking:
 - Forward/back adds a bounded tool-axis approach/retract offset.
 - Pressing the thumbstick captures a new controller neutral pose without
   moving the robot target.
+- Pressing right A near a workpiece starts an assisted pick: align above the
+  nearest object, descend, close, verify two-finger contact, and lift.
+- Pressing right B cancels an active pick or releases the held workpiece.
 
 The right controller gives a light haptic pulse when either finger contacts a
 workpiece and a stronger pulse after both fingers maintain contact while the
 gripper is commanded closed. This confirms simulated contact geometry, not
 force-closure or a guaranteed stable physical grasp.
+
+Assisted pick currently selects from PyBullet ground-truth object poses. It is
+a shared-control prototype; replacing ground truth with calibrated RGB-D part
+poses is required before this behavior represents a real perception pipeline.
 
 The GUI client runs IK and physics independently from a spawned DIRECT-mode
 render client. The render client mirrors the latest Panda joint and workpiece
