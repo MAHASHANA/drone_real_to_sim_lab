@@ -87,7 +87,29 @@ Demonstrate this sequence:
 
 The JSONL recording is written under `captures/so101_blind_<timestamp>/`. Each
 frame contains the leader action, follower action after safety limiting,
-follower feedback, and timestamps around command and observation.
+follower feedback, gripper telemetry, and timestamps around command and
+observation. The recorder applies a conservative runtime gripper torque cap of
+`200` by default. Override it only after measuring the grasp:
+
+```bash
+python hardware/so101/record_leader_follower_demo.py \
+  --leader-port /dev/serial/by-id/<LEADER> \
+  --follower-port /dev/serial/by-id/<FOLLOWER> \
+  --gripper-torque-limit 150
+```
+
+The torque value is a servo-scale cap, not force in Newtons. Each frame records:
+
+- raw current and an estimate using `6.5 mA/count`;
+- raw load and its nominal percentage;
+- voltage and temperature;
+- moving state;
+- commanded/measured gripper position and tracking error.
+
+Calibrate physical fingertip force with a load cell at several gripper openings
+and torque limits before using a Newton-valued force estimate. Do not use
+`Protection_Current` or `Overload_Torque` as normal force commands; they are
+motor-protection settings.
 
 ## Validate
 
@@ -115,7 +137,8 @@ python hardware/so101/replay_blind_demo.py \
 
 The default replay speed is `0.5`, or twice the recorded duration. The script
 checks the starting pose, requires typing `REPLAY`, monitors joint tracking
-error, and disables torque when it exits.
+error, reapplies the recorded runtime gripper torque limit, and disables torque
+when it exits. Use `--gripper-torque-limit` to request a lower replay cap.
 
 Only after a successful free-space replay should the same trajectory be tested
 with a lightweight, non-fragile object in the identical position. Blind replay

@@ -18,6 +18,7 @@ from demo_trajectory import (
     positions,
     write_jsonl_record,
 )
+from gripper_telemetry import read_gripper_telemetry, set_runtime_torque_limit
 
 
 def default_output() -> Path:
@@ -35,6 +36,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fps", type=float, default=20.0)
     parser.add_argument("--duration-sec", type=float, default=0.0)
     parser.add_argument("--max-relative-target", type=float, default=2.0)
+    parser.add_argument("--gripper-torque-limit", type=int, default=200)
     parser.add_argument("--max-start-body-delta", type=float, default=12.0)
     parser.add_argument("--max-start-gripper-delta", type=float, default=20.0)
     args = parser.parse_args()
@@ -44,6 +46,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--duration-sec cannot be negative")
     if args.max_relative_target <= 0.0:
         parser.error("--max-relative-target must be positive")
+    if not 1 <= args.gripper_torque_limit <= 500:
+        parser.error("--gripper-torque-limit must be in [1, 500]")
     return args
 
 
@@ -68,6 +72,15 @@ def main() -> None:
         leader_connected = True
         follower.connect()
         follower_connected = True
+        torque_limit = set_runtime_torque_limit(
+            follower.bus,
+            args.gripper_torque_limit,
+        )
+        print(
+            "Gripper runtime torque limit: "
+            f"{torque_limit['applied_raw']}/"
+            f"{torque_limit['configured_max_raw']} configured maximum"
+        )
 
         initial_leader = positions(leader.get_action())
         initial_follower = positions(follower.get_observation())
@@ -105,6 +118,17 @@ def main() -> None:
                     "follower_id": args.follower_id,
                     "requested_fps": args.fps,
                     "max_relative_target": args.max_relative_target,
+                    "gripper_torque_limit": torque_limit,
+                    "gripper_telemetry_units": {
+                        "present_current_raw": "servo count",
+                        "present_current_a_est": "A, 0.0065 A/count nominal",
+                        "present_load_raw": "signed servo count",
+                        "present_load_percent_est": "%, abs(raw)/10 nominal",
+                        "present_voltage_raw": "servo count",
+                        "present_voltage_v": "V, 0.1 V/count",
+                        "present_temperature_c": "degC",
+                        "position_error_pct": "calibrated gripper range percent",
+                    },
                     "initial_leader": initial_leader,
                     "initial_follower": initial_follower,
                 },
@@ -120,6 +144,11 @@ def main() -> None:
                 command_time = time.perf_counter() - start
                 sent_action = positions(follower.send_action(leader_action))
                 follower_observation = positions(follower.get_observation())
+                gripper_telemetry = read_gripper_telemetry(
+                    follower.bus,
+                    sent_action,
+                    follower_observation,
+                )
                 observation_time = time.perf_counter() - start
                 write_jsonl_record(
                     handle,
@@ -132,6 +161,7 @@ def main() -> None:
                         "leader_action": leader_action,
                         "sent_action": sent_action,
                         "follower_observation": follower_observation,
+                        "gripper_telemetry": gripper_telemetry,
                     },
                 )
                 if frame_index % 20 == 0:
