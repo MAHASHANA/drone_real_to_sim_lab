@@ -36,6 +36,12 @@ sensors/realsense_d455/
   build_rsusb_backend.sh
   launch_d455_ros2.sh
 
+hardware/so101/
+  move_follower_to_vertical.py
+  record_leader_follower_demo.py
+  replay_blind_demo.py
+  description/upstream/so101_new_calib.urdf
+
 calibration/
   future camera/PLY/world frame validation scripts
 
@@ -90,6 +96,46 @@ python3 sim/pybullet/robot_arm_pybullet.py --arms 2 --parts front_right_arm fron
 ```
 
 Add `--gui` to open the PyBullet viewer.
+
+## SO-101 Follower
+
+Activate the LeRobot environment before using the physical arm:
+
+```bash
+source .venv-lerobot/bin/activate
+```
+
+Preview the motion from the live follower pose to the recorded vertical pose:
+
+```bash
+python hardware/so101/move_follower_to_vertical.py
+```
+
+Inspect the reported joint deltas and estimated duration. To execute the
+interpolated motion:
+
+```bash
+python hardware/so101/move_follower_to_vertical.py --execute
+```
+
+The script seeds every goal from the measured pose before enabling torque,
+requires a typed `MOVE` confirmation, moves at a bounded speed, and disables
+torque on exit. It performs joint-space interpolation and does not provide
+collision avoidance, so the base must be secured and the workspace kept clear.
+When starting near a calibration endpoint, the dry run may report a body-joint
+delta above the default 120-degree limit. Inspect the complete path first, then
+raise the limit explicitly for that run, for example:
+
+```bash
+python hardware/so101/move_follower_to_vertical.py \
+  --execute \
+  --max-body-delta-deg 200
+```
+
+Leader-to-follower demonstration recording and dry-run-first blind replay are
+documented in [`hardware/so101/README.md`](hardware/so101/README.md). This
+records calibrated hardware joint values; the vendored URDF is used separately
+for kinematics and simulation.
 
 Quest/WebXR controller teleop:
 

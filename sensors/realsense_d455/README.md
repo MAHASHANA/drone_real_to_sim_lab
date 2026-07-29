@@ -13,16 +13,39 @@ provide `uvcvideo`.
 - librealsense 2.55.1 built with `FORCE_RSUSB_BACKEND=ON`
 - D455 firmware 5.17.0.9
 
-The verified USB/IP connection currently reports USB 2.1. Use conservative
-profiles until the camera is available over USB 3:
+The current USB/IP connection reports USB 3.2. The launcher provides four
+matching RGB/depth profiles:
 
-- depth: 480x270 at 5 FPS
-- color: 424x240 at 5 FPS
-- aligned depth enabled
-- colored point cloud enabled
+```text
+highres    1280x720 at 30 FPS
+balanced    848x480 at 30 FPS
+highspeed   640x360 at 90 FPS
+low         424x240 at  5 FPS
+```
 
-Observed ROS2 rates were approximately 4.8 Hz for depth, 4.4 Hz for color, and
-3.3 Hz for the registered point cloud.
+`highres` is the default. The D455 does not support 1280x720 at 90 FPS.
+High-resolution 1280x720 streams stop at 30 FPS; 90 FPS requires a lower
+resolution. Aligned depth is enabled. Point-cloud publication is disabled by
+default because a dense 1280x720 cloud adds substantial CPU and transport
+load.
+
+The launcher enables the infrared emitter at 360 mW. In the measured tabletop
+scene this increased valid ROI coverage from approximately 69.8% to 70.7% and
+reduced table-plane RMS residual from 2.7 mm to 2.5 mm. Override it when close
+or reflective parts saturate:
+
+```bash
+D455_LASER_POWER=150 \
+  sensors/realsense_d455/launch_d455_ros2.sh --profile highres
+```
+
+Hole-filling filters are intentionally disabled in the metric perception
+stream. They improve visual completeness by inventing values for invalid
+pixels, but can move object boundaries and bias pose estimates.
+
+The D455 advertises 848x480 at 60 FPS, but that profile produced UVC watchdog
+timeouts through the current WSL USB/IP path. The `balanced` preset therefore
+uses 30 FPS.
 
 ## Windows Attachment
 
@@ -60,6 +83,20 @@ With the camera attached:
 sensors/realsense_d455/launch_d455_ros2.sh
 ```
 
+Select a different profile when latency matters more than image resolution:
+
+```bash
+sensors/realsense_d455/launch_d455_ros2.sh --profile balanced
+sensors/realsense_d455/launch_d455_ros2.sh --profile highspeed
+```
+
+Enable the ROS point cloud only when a consumer requires it:
+
+```bash
+D455_POINTCLOUD=true \
+  sensors/realsense_d455/launch_d455_ros2.sh --profile highres
+```
+
 The launcher prepends the RSUSB library directory to `LD_LIBRARY_PATH`, then
 starts the installed `realsense2_camera` node. Override the default paths when
 needed:
@@ -89,6 +126,82 @@ Check live rates in another sourced ROS2 terminal:
 ros2 topic hz /camera/camera/depth/image_rect_raw
 ros2 topic hz /camera/camera/color/image_raw
 ros2 topic hz /camera/camera/depth/color/points
+```
+
+## Camera-Frame 3D Point Inspection
+
+Keep `launch_d455_ros2.sh` running, then open another ROS2 terminal:
+
+```bash
+cd /home/satya/ai_agents/drones/drone_real_to_sim_lab
+source /opt/ros/humble/setup.bash
+python3 sensors/realsense_d455/rgbd_point_inspector.py
+```
+
+Click a visible object point to read its metric XYZ coordinate in
+`camera_color_optical_frame`. The tool uses aligned depth and the live
+`CameraInfo` intrinsics. This validates RGB-depth correspondence but does not
+yet transform the point into the robot base frame.
+
+The viewer displays cropped RGB beside a table-relative height map. It fits the
+dominant work-surface plane with RANSAC and displays signed height above that
+plane from -10 to 120 mm. Press `m` to toggle between table height and raw
+aligned depth. Press `r` to refit the table after moving the camera or work
+surface. Click either panel to inspect camera-frame XYZ and table-relative
+height.
+
+Black geometry pixels are invalid, outside the configured range, or outside
+the height interval. Automatic raw-depth contrast uses the 2nd and 95th
+percentiles of valid ROI depth and displays the valid-pixel percentage. Neither
+visualization modifies the metric depth used for XYZ calculations.
+
+For a tabletop around 0.5-0.7 m from the camera, constrain raw-depth contrast
+to the workspace rather than the distant background:
+
+```bash
+python3 sensors/realsense_d455/rgbd_point_inspector.py \
+  --min-depth-m 0.48 \
+  --max-depth-m 0.90
+```
+
+Override the table-height interval when parts are taller than 120 mm:
+
+```bash
+python3 sensors/realsense_d455/rgbd_point_inspector.py \
+  --min-height-m -0.01 \
+  --max-height-m 0.20
+```
+
+Use a fixed visualization range when comparing frames with identical colors:
+
+```bash
+python3 sensors/realsense_d455/rgbd_point_inspector.py \
+  --depth-contrast fixed \
+  --min-depth-m 0.4 \
+  --max-depth-m 1.2
+```
+
+The workcell operating region was measured in the original 424x240 image as
+`x=[68,368)` and `y=[66,238)`. It is automatically scaled to the active stream
+resolution. At 1280x720 the effective ROI is approximately
+`x=[205,1111)` and `y=[198,714)`. Override it without changing the source:
+
+```bash
+python3 sensors/realsense_d455/rgbd_point_inspector.py \
+  --roi 68 66 368 238 \
+  --roi-reference-size 424 240
+```
+
+The display is cropped, but deprojection continues to use the corresponding
+full-image pixel and the original camera intrinsics. Pixels outside the ROI
+must also be excluded by downstream segmentation and point-cloud processing.
+
+The optical-frame convention is:
+
+```text
++X right in the image
++Y down in the image
++Z forward from the camera
 ```
 
 ## Quest 2 RGB-D Viewer
