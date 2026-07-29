@@ -188,10 +188,17 @@ The right thumbstick provides fine adjustment on top of motion tracking:
 - Forward/back adds a bounded tool-axis approach/retract offset.
 - Pressing the thumbstick captures a new controller neutral pose without
   moving the robot target.
-- Pressing right A near a workpiece starts an assisted pick: align above the
-  nearest object, descend, close, verify two-finger contact, and lift.
+- Closing trigger/grip after both fingers contact a workpiece attaches it to
+  the gripper; opening trigger/grip releases it.
+- Pressing right A starts an assisted pick of the nearest workpiece: align
+  above it, descend, close, verify two-finger contact, and lift.
 - Pressing right A again releases a completed assisted pick. Right B also
   cancels an active pick or releases the held workpiece when Quest reports it.
+
+Assisted pick measures each workpiece's horizontal bounds and rotates the
+gripper to approach its narrower side. This keeps the requested grasp within
+the Panda's 80 mm gripper aperture; for example, the green block is grasped
+across its 50 mm side instead of its 110 mm side.
 
 The right controller gives a light haptic pulse when either finger contacts a
 workpiece and a stronger pulse after both fingers maintain contact while the
