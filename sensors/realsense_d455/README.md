@@ -94,8 +94,21 @@ Enable the ROS point cloud only when a consumer requires it:
 
 ```bash
 D455_POINTCLOUD=true \
-  sensors/realsense_d455/launch_d455_ros2.sh --profile highres
+  sensors/realsense_d455/launch_d455_ros2.sh --profile balanced
 ```
+
+Do not combine the `highres` profile with the dense ROS point cloud on the
+current WSL2/USB-IP path. A measured cloud contained about 482,000 points and a
+9.6 MB ROS payload; with high-resolution RGB and aligned depth enabled, actual
+delivery fell to approximately 5.5 Hz RGB and 0.5 Hz depth/cloud instead of
+30 Hz, accompanied by USB control-transfer and D455 right-MIPI hardware
+notifications. The launcher rejects that combination unless
+`D455_ALLOW_HIGHRES_POINTCLOUD=true` is explicitly set for diagnostics.
+
+For image-based localization, keep the point cloud disabled and deproject only
+the segmented pixels or selected image points from aligned depth. This avoids
+publishing a dense cloud when downstream code needs only a small workspace
+region.
 
 The launcher prepends the RSUSB library directory to `LD_LIBRARY_PATH`, then
 starts the installed `realsense2_camera` node. Override the default paths when

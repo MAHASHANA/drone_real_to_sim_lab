@@ -8,6 +8,7 @@ rsusb_lib_dir="${RSUSB_LIB_DIR:-${HOME}/librealsense/build-rsusb/Release}"
 profile="${D455_PROFILE:-highres}"
 pointcloud="${D455_POINTCLOUD:-false}"
 laser_power="${D455_LASER_POWER:-360.0}"
+allow_highres_pointcloud="${D455_ALLOW_HIGHRES_POINTCLOUD:-false}"
 
 if [[ "${1:-}" == "--profile" ]]; then
     if [[ $# -lt 2 ]]; then
@@ -41,6 +42,20 @@ case "${profile}" in
         exit 2
         ;;
 esac
+
+if [[ "${profile}" == "highres" && "${pointcloud}" == "true" && "${allow_highres_pointcloud}" != "true" ]]; then
+    cat >&2 <<'EOF'
+Refusing highres + pointcloud under the default WSL2/USB-IP path.
+This combination produces multi-megabyte clouds and has caused severe stream
+starvation and D455 hardware notifications. Use one of:
+
+  sensors/realsense_d455/launch_d455_ros2.sh --profile highres
+  D455_POINTCLOUD=true sensors/realsense_d455/launch_d455_ros2.sh --profile balanced
+
+Set D455_ALLOW_HIGHRES_POINTCLOUD=true only for an explicit diagnostic test.
+EOF
+    exit 2
+fi
 
 if [[ ! -f "${ros_setup}" ]]; then
     printf 'ROS2 setup file not found: %s\n' "${ros_setup}" >&2
