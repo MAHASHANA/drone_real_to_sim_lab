@@ -1,0 +1,13 @@
+diff --git a/so101_ros2_bridge/so101_ros2_bridge/bridge/bridge.py b/so101_ros2_bridge/so101_ros2_bridge/bridge/bridge.py
+--- a/so101_ros2_bridge/so101_ros2_bridge/bridge/bridge.py
++++ b/so101_ros2_bridge/so101_ros2_bridge/bridge/bridge.py
+@@ -258,6 +258,8 @@ class FollowerBridge(SO101ROS2Bridge):
+             self.get_parameter('max_relative_target').get_parameter_value().integer_value
+         )
+-        max_relative_target = max_relative_target if max_relative_target != 0 else None
++        # LeRobot accepts a float or per-joint dictionary, while ROS integer
++        # parameters arrive here as Python ints.
++        max_relative_target = float(max_relative_target) if max_relative_target != 0 else None
+ 
+         return {
+             'port': self.get_parameter('port').get_parameter_value().string_value,

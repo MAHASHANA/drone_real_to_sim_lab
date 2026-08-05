@@ -1,0 +1,97 @@
+diff --git a/so101_bringup/launch/so101_teleoperate.launch.py b/so101_bringup/launch/so101_teleoperate.launch.py
+--- a/so101_bringup/launch/so101_teleoperate.launch.py
++++ b/so101_bringup/launch/so101_teleoperate.launch.py
+@@ -38,6 +38,22 @@ def equals(value, expected):
+     return PythonExpression(["'", value, "' == '", expected, "'"])
+ 
+ 
++def both_equal(first, first_expected, second, second_expected):
++    return PythonExpression(
++        [
++            "'",
++            first,
++            "' == '",
++            first_expected,
++            "' and '",
++            second,
++            "' == '",
++            second_expected,
++            "'",
++        ]
++    )
++
++
+ def generate_launch_description():
+     # Launch description lists
+     args = []
+@@ -80,11 +97,19 @@ def generate_launch_description():
+     )
+     args.append(expert_arg)
+ 
++    cameras_arg = DeclareLaunchArgument(
++        'cameras',
++        default_value='false',
++        description='Launch cameras configured by so101_bringup',
++    )
++    args.append(cameras_arg)
++
+     model = LaunchConfiguration('model')
+     display_config = LaunchConfiguration('display_config')
+     display = LaunchConfiguration('display')
+     teleop_mode = LaunchConfiguration('teleop_mode')
+     expert = LaunchConfiguration('expert')
++    cameras = LaunchConfiguration('cameras')
+ 
+     # Debug: Log the mode
+     mode_log = LogInfo(msg=['[TELEOP LAUNCH] Mode is set to: ', teleop_mode])
+@@ -142,7 +167,7 @@ def generate_launch_description():
+     # Include cameras - ONLY in real mode
+     camera_log = LogInfo(
+         msg='[TELEOP LAUNCH] Launching cameras',
+-        condition=IfCondition(equals(teleop_mode, 'real')),
++        condition=IfCondition(both_equal(teleop_mode, 'real', cameras, 'true')),
+     )
+     actions.append(camera_log)
+ 
+@@ -150,7 +175,7 @@ def generate_launch_description():
+         PythonLaunchDescriptionSource(
+             os.path.join(bringup_pkg, 'launch', 'include', 'camera.launch.py')
+         ),
+-        condition=IfCondition(equals(teleop_mode, 'real')),
++        condition=IfCondition(both_equal(teleop_mode, 'real', cameras, 'true')),
+     )
+     actions.append(cameras_launch)
+ 
+diff --git a/so101_ros2_bridge/config/so101_follower_params.yaml b/so101_ros2_bridge/config/so101_follower_params.yaml
+--- a/so101_ros2_bridge/config/so101_follower_params.yaml
++++ b/so101_ros2_bridge/config/so101_follower_params.yaml
+@@ -1,9 +1,9 @@
+ so101_follower_ros2_bridge:
+   ros__parameters:
+-    port: "/dev/ttyACM1"
+-    id: "Tzili"
+-    # calibration_dir: <abs path to your calibration dir>
++    port: "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5B8E115987-if00"
++    id: "my_awesome_follower_arm"
++    calibration_dir: "/home/satya/.cache/huggingface/lerobot/calibration/robots/so_follower"
+     use_degrees: true
+-    max_relative_target: 10 # default is none
++    max_relative_target: 10.0
+     disable_torque_on_disconnect: true
+     publish_rate: 50.0
+diff --git a/so101_ros2_bridge/config/so101_leader_params.yaml b/so101_ros2_bridge/config/so101_leader_params.yaml
+--- a/so101_ros2_bridge/config/so101_leader_params.yaml
++++ b/so101_ros2_bridge/config/so101_leader_params.yaml
+@@ -1,9 +1,8 @@
+ so101_leader_ros2_bridge:
+   ros__parameters:
+-    port: "/dev/ttyACM0"
+-    id: "Gili"
+-    # calibration_dir: <abs path to your calibration dir>
++    port: "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5B8E113301-if00"
++    id: "my_awesome_leader_arm"
++    calibration_dir: "/home/satya/.cache/huggingface/lerobot/calibration/teleoperators/so_leader"
+     use_degrees: true
+-    # max_relative_target: 10 # default is none
+     disable_torque_on_disconnect: true
+     publish_rate: 50.0

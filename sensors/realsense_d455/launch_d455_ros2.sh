@@ -7,6 +7,7 @@ ros_setup="${ROS_SETUP:-/opt/ros/${ros_distro}/setup.bash}"
 rsusb_lib_dir="${RSUSB_LIB_DIR:-${HOME}/librealsense/build-rsusb/Release}"
 profile="${D455_PROFILE:-highres}"
 pointcloud="${D455_POINTCLOUD:-false}"
+enable_depth="${D455_ENABLE_DEPTH:-true}"
 laser_power="${D455_LASER_POWER:-360.0}"
 allow_highres_pointcloud="${D455_ALLOW_HIGHRES_POINTCLOUD:-false}"
 
@@ -57,6 +58,11 @@ EOF
     exit 2
 fi
 
+if [[ "${enable_depth}" != "true" && "${pointcloud}" == "true" ]]; then
+    printf '%s\n' "Point-cloud output requires D455_ENABLE_DEPTH=true." >&2
+    exit 2
+fi
+
 if [[ ! -f "${ros_setup}" ]]; then
     printf 'ROS2 setup file not found: %s\n' "${ros_setup}" >&2
     exit 1
@@ -76,19 +82,19 @@ set -u
 # ROS2's RealSense wrapper loads this ABI-compatible userspace backend at run time.
 export LD_LIBRARY_PATH="${rsusb_lib_dir}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 
-printf 'Starting D455 profile=%s color=%s depth=%s pointcloud=%s laser=%s mW\n' \
-    "${profile}" "${color_profile}" "${depth_profile}" "${pointcloud}" \
-    "${laser_power}"
+printf 'Starting D455 profile=%s color=%s depth_enabled=%s depth=%s pointcloud=%s laser=%s mW\n' \
+    "${profile}" "${color_profile}" "${enable_depth}" "${depth_profile}" \
+    "${pointcloud}" "${laser_power}"
 
 exec ros2 launch realsense2_camera rs_launch.py \
     enable_color:=true \
     rgb_camera.color_profile:="${color_profile}" \
     rgb_camera.color_format:=RGB8 \
-    enable_depth:=true \
+    enable_depth:="${enable_depth}" \
     depth_module.depth_profile:="${depth_profile}" \
     depth_module.emitter_enabled:=1 \
     depth_module.laser_power:="${laser_power}" \
     pointcloud.enable:="${pointcloud}" \
-    align_depth.enable:=true \
-    enable_sync:=true \
+    align_depth.enable:="${enable_depth}" \
+    enable_sync:="${enable_depth}" \
     "$@"

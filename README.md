@@ -38,8 +38,7 @@ sensors/realsense_d455/
 
 hardware/so101/
   move_follower_to_vertical.py
-  record_leader_follower_demo.py
-  replay_blind_demo.py
+  gripper_telemetry.py
   description/upstream/so101_new_calib.urdf
 
 calibration/
@@ -132,10 +131,10 @@ python hardware/so101/move_follower_to_vertical.py \
   --max-body-delta-deg 200
 ```
 
-Leader-to-follower demonstration recording and dry-run-first blind replay are
-documented in [`hardware/so101/README.md`](hardware/so101/README.md). This
-records calibrated hardware joint values; the vendored URDF is used separately
-for kinematics and simulation.
+Direct leader-to-follower control uses LeRobot's maintained teleoperation
+pipeline. Setup, safety checks, and the command are documented in
+[`hardware/so101/README.md`](hardware/so101/README.md). No project-specific
+motion recorder or blind trajectory replayer is used.
 
 Quest/WebXR controller teleop:
 
@@ -297,6 +296,19 @@ This publishes color, depth, aligned depth, camera calibration, extrinsics, and
 a registered colored point cloud. See
 [`sensors/realsense_d455/README.md`](sensors/realsense_d455/README.md) for
 setup, build, topic, and rate-check details.
+
+For D455-to-SO-101 eye-to-hand calibration, attach both arms, the D455, and the
+wrist USB camera to WSL, then start the complete ROS stack with:
+
+```bash
+calibration/eye_to_hand/start_calibration_stack.sh
+```
+
+This command replaces direct `lerobot-teleoperate` while calibration is
+running because the ROS arm bridges must own the serial ports and publish the
+robot transforms. See
+[`calibration/eye_to_hand/README.md`](calibration/eye_to_hand/README.md) for
+target placement, pose sampling, and validation.
 
 To visualize live color and aligned depth in Quest, leave the camera launch
 running and start the RGB-D WebXR bridge in a second ROS2 terminal:

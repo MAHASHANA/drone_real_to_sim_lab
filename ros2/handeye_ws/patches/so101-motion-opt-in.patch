@@ -1,0 +1,38 @@
+diff --git a/so101_bringup/launch/so101_teleoperate.launch.py b/so101_bringup/launch/so101_teleoperate.launch.py
+--- a/so101_bringup/launch/so101_teleoperate.launch.py
++++ b/so101_bringup/launch/so101_teleoperate.launch.py
+@@ -107,6 +107,13 @@ def generate_launch_description():
+     )
+     args.append(cameras_arg)
+ 
++    enable_teleop_arg = DeclareLaunchArgument(
++        'enable_teleop',
++        default_value='false',
++        description='Allow leader commands to control the follower',
++    )
++    args.append(enable_teleop_arg)
++
+     model = LaunchConfiguration('model')
+     display_config = LaunchConfiguration('display_config')
+     display = LaunchConfiguration('display')
+@@ -114,6 +121,7 @@ def generate_launch_description():
+     teleop_mode = LaunchConfiguration('teleop_mode')
+     expert = LaunchConfiguration('expert')
+     cameras = LaunchConfiguration('cameras')
++    enable_teleop = LaunchConfiguration('enable_teleop')
+ 
+     # Debug: Log the mode
+     mode_log = LogInfo(msg=['[TELEOP LAUNCH] Mode is set to: ', teleop_mode])
+@@ -239,7 +247,11 @@ def generate_launch_description():
+         }.items(),
+     )
+ 
+-    delayed_teleop_launch = TimerAction(period=15.0, actions=[teleop_launch])
++    delayed_teleop_launch = TimerAction(
++        period=15.0,
++        actions=[teleop_launch],
++        condition=IfCondition(enable_teleop),
++    )
+     actions.append(delayed_teleop_launch)
+ 
+     return LaunchDescription(args + actions)

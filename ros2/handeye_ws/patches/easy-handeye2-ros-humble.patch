@@ -1,0 +1,49 @@
+diff --git a/easy_handeye2/easy_handeye2/common_launch.py b/easy_handeye2/easy_handeye2/common_launch.py
+index 9034cd1..f242b31 100644
+--- a/easy_handeye2/easy_handeye2/common_launch.py
++++ b/easy_handeye2/easy_handeye2/common_launch.py
+@@ -1,6 +1,6 @@
+ 
+ from launch.actions import DeclareLaunchArgument
+-from launch.substitutions import EqualsSubstitution, LaunchConfiguration
++from launch.substitutions import LaunchConfiguration, PythonExpression
+ from launch.conditions    import IfCondition
+ 
+ 
+@@ -12,15 +12,13 @@ arg_robot_base_frame = DeclareLaunchArgument('robot_base_frame')
+ arg_robot_effector_frame = DeclareLaunchArgument('robot_effector_frame')
+ 
+ is_eye_in_hand = IfCondition(
+-  EqualsSubstitution(
+-    LaunchConfiguration('calibration_type'),
+-    'eye_in_hand'
+-  )
++  PythonExpression([
++    "'", LaunchConfiguration('calibration_type'), "' == 'eye_in_hand'"
++  ])
+ )
+ 
+ is_eye_on_base = IfCondition(
+-  EqualsSubstitution(
+-    LaunchConfiguration('calibration_type'),
+-    'eye_on_base'
+-  )
+-)
+\ No newline at end of file
++  PythonExpression([
++    "'", LaunchConfiguration('calibration_type'), "' == 'eye_on_base'"
++  ])
++)
+diff --git a/easy_handeye2/launch/calibrate.launch.py b/easy_handeye2/launch/calibrate.launch.py
+index b68fdb8..e10f772 100644
+--- a/easy_handeye2/launch/calibrate.launch.py
++++ b/easy_handeye2/launch/calibrate.launch.py
+@@ -1,7 +1,6 @@
+ from launch import LaunchDescription
+ from launch.actions import DeclareLaunchArgument
+-from launch.substitutions import EqualsSubstitution
+-from launch.substitutions import LaunchConfiguration, PythonExpression
++from launch.substitutions import LaunchConfiguration
+ from launch_ros.actions import Node
+ 
+ from easy_handeye2.common_launch import arg_calibration_type, arg_tracking_base_frame, arg_tracking_marker_frame, arg_robot_base_frame, \

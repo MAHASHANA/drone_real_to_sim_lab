@@ -1,15 +1,10 @@
 # SO-101 hardware workflow
 
-This directory contains the first hardware-validation workflow:
-
-1. teleoperate the SO-101 follower from the SO-101 leader;
-2. record requested, accepted, and measured joint poses;
-3. validate the recording without connecting to hardware;
-4. replay the same trajectory slowly in an unchanged physical setup.
-
-This is blind joint-space replay. It has no object localization, collision
-checking, visual correction, or grasp verification. Use it only as a controlled
-baseline before adding the D455 eye-to-hand pipeline.
+The physical baseline is direct SO-101 leader-to-follower teleoperation through
+LeRobot. The project does not maintain a separate motion recorder or blind
+trajectory replayer. Demonstration collection will be added later through a
+standard LeRobot dataset once the cameras and robot coordinate frames are
+calibrated.
 
 ## Model
 
@@ -51,97 +46,84 @@ Identify which by-id path is the leader and which is the follower before
 continuing. Do not use `/dev/ttyACM0` and `/dev/ttyACM1` in saved commands
 because those names can swap after reconnecting.
 
-## Record
+## Verify Connections
+
+Both calibration files must exist:
+
+```bash
+test -f ~/.cache/huggingface/lerobot/calibration/teleoperators/so_leader/my_awesome_leader_arm.json
+test -f ~/.cache/huggingface/lerobot/calibration/robots/so_follower/my_awesome_follower_arm.json
+```
+
+Confirm that each controller responds on its identified path before enabling
+follower torque. Only one process may open a serial port at a time.
+
+## Direct Teleoperation
 
 Before starting:
 
 - clamp both bases;
-- clear the workspace;
+- clear the follower workspace;
 - keep the follower power switch accessible;
-- place the leader and follower in matching poses;
-- use slow, continuous motions;
-- begin and end in repeatable poses.
+- manually place leader and follower in closely matching poses;
+- identify the stable leader and follower paths instead of assuming tty order.
 
-Run:
-
-```bash
-python hardware/so101/record_leader_follower_demo.py \
-  --leader-port /dev/serial/by-id/<LEADER> \
-  --follower-port /dev/serial/by-id/<FOLLOWER>
-```
-
-The script first checks that all motors and calibrations are available. It also
-refuses to start if the leader and follower poses differ by more than the
-configured limits. Type `RECORD` only after inspecting the physical setup.
-
-Demonstrate this sequence:
-
-1. start pose;
-2. approach above the target with the gripper open;
-3. descend;
-4. close the gripper;
-5. pause briefly;
-6. lift;
-7. pause in the final pose;
-8. press `Ctrl+C`.
-
-The JSONL recording is written under `captures/so101_blind_<timestamp>/`. Each
-frame contains the leader action, follower action after safety limiting,
-follower feedback, gripper telemetry, and timestamps around command and
-observation. The recorder applies a conservative runtime gripper torque cap of
-`200` by default. Override it only after measuring the grasp:
+Activate the environment and run the maintained LeRobot loop:
 
 ```bash
-python hardware/so101/record_leader_follower_demo.py \
-  --leader-port /dev/serial/by-id/<LEADER> \
-  --follower-port /dev/serial/by-id/<FOLLOWER> \
-  --gripper-torque-limit 150
+source .venv-lerobot/bin/activate
+
+lerobot-teleoperate \
+  --teleop.type=so101_leader \
+  --teleop.port=/dev/serial/by-id/<LEADER> \
+  --teleop.id=my_awesome_leader_arm \
+  --robot.type=so101_follower \
+  --robot.port=/dev/serial/by-id/<FOLLOWER> \
+  --robot.id=my_awesome_follower_arm \
+  --robot.max_relative_target=2.0 \
+  --fps=30
 ```
 
-The torque value is a servo-scale cap, not force in Newtons. Each frame records:
+The loop reads calibrated leader joint positions and sends them directly as
+calibrated follower joint targets. `max_relative_target=2.0` limits each joint
+command to at most two normalized units from the measured follower position per
+control cycle. It reduces abrupt jumps but is not collision avoidance.
 
-- raw current and an estimate using `6.5 mA/count`;
-- raw load and its nominal percentage;
-- voltage and temperature;
-- moving state;
-- commanded/measured gripper position and tracking error.
+Press `Ctrl+C` to stop. LeRobot disables follower torque during a normal
+disconnect. Use the physical power switch if communication fails or motion is
+unexpected.
 
-Calibrate physical fingertip force with a load cell at several gripper openings
-and torque limits before using a Newton-valued force estimate. Do not use
-`Protection_Current` or `Overload_Torque` as normal force commands; they are
-motor-protection settings.
+## ROS Telemetry Bridge
 
-## Validate
-
-Dry-run validation does not connect to or command the robot:
+For calibration, use the maintained direct-control bridge instead of the ROS
+trajectory teleoperation component. Its control loop follows LeRobot's direct
+teleoperation sequence and only adds localhost telemetry. Manually pose-match
+the arms before launch. It is motion-disabled unless `--enable-motion` is
+supplied:
 
 ```bash
-python hardware/so101/replay_blind_demo.py \
-  captures/so101_blind_<timestamp>/demo.jsonl
+source .venv-lerobot/bin/activate
+unset PYTHONPATH
+
+python hardware/so101/leader_follower_bridge.py --enable-motion
 ```
 
-It checks schema, frame ordering, timestamps, and maximum consecutive joint
-steps.
+The controller is the only process allowed to open the two serial ports. It
+sends latest-state telemetry over localhost UDP. The ROS Humble receiver runs
+in Python 3.10 and publishes `/leader/joint_states`,
+`/follower/joint_states`, and `/so101/control_status`; it never commands the
+motors. This split keeps the proven Python 3.12 LeRobot runtime isolated from
+ROS Humble's Python 3.10 runtime.
 
-## Replay
+## VLA Demonstrations
 
-First remove the object and replay the pick-shaped motion in free space. Put the
-unpowered follower at the recorded start pose, clear the workspace, and run:
+The LeRobot dataset, SmolVLA training, and guarded rollout workflow is under
+[`vla/`](vla/README.md). Complete direct teleoperation and camera checks before
+recording demonstrations.
 
-```bash
-python hardware/so101/replay_blind_demo.py \
-  captures/so101_blind_<timestamp>/demo.jsonl \
-  --execute \
-  --follower-port /dev/serial/by-id/<FOLLOWER>
-```
+## Gripper Diagnostics
 
-The default replay speed is `0.5`, or twice the recorded duration. The script
-checks the starting pose, requires typing `REPLAY`, monitors joint tracking
-error, reapplies the recorded runtime gripper torque limit, and disables torque
-when it exits. Use `--gripper-torque-limit` to request a lower replay cap.
-
-Only after a successful free-space replay should the same trajectory be tested
-with a lightweight, non-fragile object in the identical position. Blind replay
-is expected to fail when the camera, arm base, object pose, grasp contact, or
-workspace changes. Those failures are the baseline that eye-to-hand calibration
-and closed-loop vision will address.
+`gripper_telemetry.py` contains the register-reading helpers used to inspect
+gripper current, load, voltage, temperature, motion state, and position error.
+Servo current and load are diagnostics, not calibrated fingertip force. A load
+cell calibration is required before expressing grip force in Newtons.

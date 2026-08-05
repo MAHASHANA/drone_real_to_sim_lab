@@ -1,0 +1,39 @@
+diff --git a/src/lerobot/motors/motors_bus.py b/src/lerobot/motors/motors_bus.py
+index c26bdc7..dd2d1d8 100644
+--- a/src/lerobot/motors/motors_bus.py
++++ b/src/lerobot/motors/motors_bus.py
+@@ -20,8 +20,11 @@
+ # https://github.com/astral-sh/ruff/issues/3711
+ 
+ import abc
+ import logging
++import platform
++import select
++import sys
+ from contextlib import contextmanager
+ from dataclasses import dataclass
+ from enum import Enum
+ from functools import cached_property
+@@ -33,7 +36,21 @@ from deepdiff import DeepDiff
+ from tqdm import tqdm
+ 
+ from lerobot.utils.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
+-from lerobot.utils.utils import enter_pressed, move_cursor_up
+ 
++
++def enter_pressed() -> bool:
++    if platform.system() == "Windows":
++        import msvcrt
++
++        if msvcrt.kbhit():
++            return msvcrt.getch() in (b"\r", b"\n")
++        return False
++    return bool(select.select([sys.stdin], [], [], 0)[0]) and sys.stdin.readline().strip() == ""
++
++
++def move_cursor_up(lines: int) -> None:
++    print(f"\033[{lines}A", end="")
++
++
+ NameOrID: TypeAlias = str | int
+ Value: TypeAlias = int | float

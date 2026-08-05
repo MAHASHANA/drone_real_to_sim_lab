@@ -1,0 +1,9 @@
+repositories:
+  easy_handeye2:
+    type: git
+    url: https://github.com/marcoesposito1988/easy_handeye2.git
+    version: 0ad1ddddbbc9a3cc7d3695ad53d04f1a5b82e598
+  so101_ros2:
+    type: git
+    url: https://github.com/nimiCurtis/so101_ros2.git
+    version: b50872d2ba03a3d67fb9a9a7b59af1e72c7040b3

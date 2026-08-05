@@ -1,0 +1,59 @@
+diff --git a/so101_description/launch/rsp.launch.py b/so101_description/launch/rsp.launch.py
+--- a/so101_description/launch/rsp.launch.py
++++ b/so101_description/launch/rsp.launch.py
+@@ -28,7 +28,6 @@ from launch.substitutions import (
+     LaunchConfiguration,
+     PathJoinSubstitution,
+     PythonExpression,
+-    TextSubstitution,
+ )
+ from launch_ros.actions import Node
+ from launch_ros.parameter_descriptions import ParameterValue
+@@ -66,10 +65,10 @@ def generate_launch_description():
+             {'robot_description': robot_description},
+             {'use_sim_time': use_sim},
+             {
+-                'frame_prefix': [
+-                    robot_type,
+-                    TextSubstitution(text='/'),
+-                ]
++                'frame_prefix': ParameterValue(
++                    PythonExpression(["'", robot_type, "/'"]),
++                    value_type=str,
++                )
+             },
+         ],
+         namespace=robot_type,
+@@ -89,7 +88,7 @@ def generate_launch_description():
+             '0',
+             '0',  # roll pitch yaw (or qx qy qz qw)
+             'world',  # parent frame
+-            [robot_type, TextSubstitution(text='/base_link')],  # child frame
++            PythonExpression(["'", robot_type, "/base_link'"]),  # child frame
+         ],
+     )
+ 
+diff --git a/so101_ros2_bridge/launch/so101_ros2_bridge.launch.py b/so101_ros2_bridge/launch/so101_ros2_bridge.launch.py
+--- a/so101_ros2_bridge/launch/so101_ros2_bridge.launch.py
++++ b/so101_ros2_bridge/launch/so101_ros2_bridge.launch.py
+@@ -23,6 +23,7 @@ from launch import LaunchDescription
+ from launch.substitutions import (
+     LaunchConfiguration,
+     PathJoinSubstitution,
++    PythonExpression,
+     TextSubstitution,
+ )
+ from launch_ros.actions import Node
+@@ -37,11 +38,7 @@ def generate_launch_description():
+         [
+             FindPackageShare('so101_ros2_bridge'),
+             'config',
+-            [
+-                TextSubstitution(text='so101_'),
+-                robot_type,
+-                TextSubstitution(text='_params.yaml'),
+-            ],
++            PythonExpression(["'so101_", robot_type, "_params.yaml'"]),
+         ]
+     )
+ 

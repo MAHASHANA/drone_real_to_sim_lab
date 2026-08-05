@@ -1,0 +1,99 @@
+diff --git a/so101_bringup/launch/so101_teleoperate.launch.py b/so101_bringup/launch/so101_teleoperate.launch.py
+index 994d785..59339d0 100644
+--- a/so101_bringup/launch/so101_teleoperate.launch.py
++++ b/so101_bringup/launch/so101_teleoperate.launch.py
+@@ -31,7 +31,11 @@ from launch.actions import (
+ )
+ from launch.conditions import IfCondition
+ from launch.launch_description_sources import PythonLaunchDescriptionSource
+-from launch.substitutions import EqualsSubstitution, LaunchConfiguration
++from launch.substitutions import LaunchConfiguration, PythonExpression
++
++
++def equals(value, expected):
++    return PythonExpression(["'", value, "' == '", expected, "'"])
+ 
+ 
+ def generate_launch_description():
+@@ -97,7 +101,7 @@ def generate_launch_description():
+     # Launch follower - ONLY in real mode
+     follower_log = LogInfo(
+         msg='[TELEOP LAUNCH] Launching REAL follower',
+-        condition=IfCondition(EqualsSubstitution(teleop_mode, 'real')),
++        condition=IfCondition(equals(teleop_mode, 'real')),
+     )
+     actions.append(follower_log)
+ 
+@@ -110,7 +114,7 @@ def generate_launch_description():
+             'model': model,
+             'use_sim_time': 'false',
+         }.items(),
+-        condition=IfCondition(EqualsSubstitution(expert, 'human')),
++        condition=IfCondition(equals(expert, 'human')),
+     )
+     actions.append(leader_robot_launch)
+ 
+@@ -118,7 +122,7 @@ def generate_launch_description():
+         PythonLaunchDescriptionSource(
+             os.path.join(bringup_pkg, 'launch', 'include', 'policy.launch.py')
+         ),
+-        condition=IfCondition(EqualsSubstitution(expert, 'policy')),
++        condition=IfCondition(equals(expert, 'policy')),
+     )
+     actions.append(policy_launch)
+ 
+@@ -130,19 +134,19 @@ def generate_launch_description():
+             'model': model,
+             'use_sim_time': 'false',
+         }.items(),
+-        condition=IfCondition(EqualsSubstitution(teleop_mode, 'real')),
++        condition=IfCondition(equals(teleop_mode, 'real')),
+     )
+     delayed_follower_launch = TimerAction(
+         period=5.0,
+         actions=[follower_robot_launch],
+-        condition=IfCondition(EqualsSubstitution(teleop_mode, 'real')),
++        condition=IfCondition(equals(teleop_mode, 'real')),
+     )
+     actions.append(delayed_follower_launch)
+ 
+     # Include cameras - ONLY in real mode
+     camera_log = LogInfo(
+         msg='[TELEOP LAUNCH] Launching cameras',
+-        condition=IfCondition(EqualsSubstitution(teleop_mode, 'real')),
++        condition=IfCondition(equals(teleop_mode, 'real')),
+     )
+     actions.append(camera_log)
+ 
+@@ -150,14 +154,14 @@ def generate_launch_description():
+         PythonLaunchDescriptionSource(
+             os.path.join(bringup_pkg, 'launch', 'include', 'camera.launch.py')
+         ),
+-        condition=IfCondition(EqualsSubstitution(teleop_mode, 'real')),
++        condition=IfCondition(equals(teleop_mode, 'real')),
+     )
+     actions.append(cameras_launch)
+ 
+     # Include sim_isaac.launch ONLY if teleop_mode == "isaac"
+     isaac_log = LogInfo(
+         msg='[TELEOP LAUNCH] Launching Isaac simulation',
+-        condition=IfCondition(EqualsSubstitution(teleop_mode, 'isaac')),
++        condition=IfCondition(equals(teleop_mode, 'isaac')),
+     )
+     actions.append(isaac_log)
+ 
+@@ -169,12 +173,12 @@ def generate_launch_description():
+             'model': model,
+             'display_config': display_config,
+         }.items(),
+-        condition=IfCondition(EqualsSubstitution(teleop_mode, 'isaac')),
++        condition=IfCondition(equals(teleop_mode, 'isaac')),
+     )
+     delayed_sim_isaac_launch = TimerAction(
+         period=5.0,
+         actions=[sim_isaac_launch],
+-        condition=IfCondition(EqualsSubstitution(teleop_mode, 'isaac')),
++        condition=IfCondition(equals(teleop_mode, 'isaac')),
+     )
+     actions.append(delayed_sim_isaac_launch)
+ 

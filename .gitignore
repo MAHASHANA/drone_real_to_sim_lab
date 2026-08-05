@@ -39,12 +39,22 @@ sensors/iphone_lota/captures/
 # Logs
 *.log
 *.jsonl
+/log/
 
 # Build/package outputs
 build/
 dist/
 node_modules/
 *.egg-info/
+
+# Local ROS 2 hand-eye workspace dependencies and outputs
+ros2/handeye_ws/src/easy_handeye2/
+ros2/handeye_ws/src/so101_ros2/
+ros2/handeye_ws/vendor/
+ros2/handeye_ws/.venv/
+ros2/handeye_ws/build/
+ros2/handeye_ws/install/
+ros2/handeye_ws/log/
 
 # Simulation/runtime temp files
 *.tmp

@@ -1,0 +1,78 @@
+diff --git a/so101_controller/launch/so101_controllers.launch.py b/so101_controller/launch/so101_controllers.launch.py
+index 8dd1da1..d2c743f 100644
+--- a/so101_controller/launch/so101_controllers.launch.py
++++ b/so101_controller/launch/so101_controllers.launch.py
+@@ -21,12 +21,14 @@
+ # SOFTWARE.
+ 
+ from launch import LaunchDescription
+-from launch.substitutions import LaunchConfiguration
++from launch.conditions import IfCondition
++from launch.substitutions import LaunchConfiguration, PythonExpression
+ from launch_ros.actions import Node
+ 
+ 
+ def generate_launch_description():
+     robot_type = LaunchConfiguration('type')
++    is_follower = IfCondition(PythonExpression(["'", robot_type, "' == 'follower'"]))
+ 
+     arm_controller_spawner = Node(
+         package='controller_manager',
+@@ -34,6 +36,7 @@ def generate_launch_description():
+         arguments=['arm_controller', '--controller-manager', 'controller_manager'],
+         output='screen',
+         namespace=robot_type,
++        condition=is_follower,
+     )
+ 
+     gripper_controller_spawner = Node(
+@@ -42,6 +45,7 @@ def generate_launch_description():
+         arguments=['gripper_controller', '--controller-manager', 'controller_manager'],
+         output='screen',
+         namespace=robot_type,
++        condition=is_follower,
+     )
+ 
+     joint_state_broadcaster_spawner = Node(
+diff --git a/so101_teleop/config/so101_leader_teleop.yaml b/so101_teleop/config/so101_leader_teleop.yaml
+index f343138..81a0e13 100644
+--- a/so101_teleop/config/so101_leader_teleop.yaml
++++ b/so101_teleop/config/so101_leader_teleop.yaml
+@@ -2,6 +2,6 @@
+ leader_teleop_component:
+   ros__parameters:
+     leader_joint_states_topic: "/leader/joint_states"
+-    follower_arm_trajectory_topic: "/follower/arm_controller/joint_trajectory"
+-    follower_gripper_command_topic: "/follower/gripper_controller/gripper_cmd"
+-    gripper_deadband: 0.01 # In radians
++    follower_trajectory_topic: "/follower/arm_controller/joint_trajectory"
++    follower_gripper_action_name: "/follower/gripper_controller/gripper_cmd"
++    gripper_deadband: 0.01 # radians
+diff --git a/so101_teleop/include/so101_teleop/leader_teleop_component.hpp b/so101_teleop/include/so101_teleop/leader_teleop_component.hpp
+index 543fcf4..4a24422 100644
+--- a/so101_teleop/include/so101_teleop/leader_teleop_component.hpp
++++ b/so101_teleop/include/so101_teleop/leader_teleop_component.hpp
+@@ -76,7 +76,7 @@ private:
+   trajectory_msgs::msg::JointTrajectory trajectory_msg_;
+ 
+   // Variables for gripper deadband logic
+-  double last_gripper_goal_position_;
++  std::optional<double> last_gripper_goal_position_;
+   double gripper_deadband_;
+ };
+ 
+diff --git a/so101_teleop/src/leader_teleop_component.cpp b/so101_teleop/src/leader_teleop_component.cpp
+index 7df422e..6c151b6 100644
+--- a/so101_teleop/src/leader_teleop_component.cpp
++++ b/so101_teleop/src/leader_teleop_component.cpp
+@@ -156,7 +156,9 @@ void LeaderTeleopComponent::joint_state_callback(const sensor_msgs::msg::JointSt
+     double current_gripper_pos = msg->position[*leader_gripper_joint_index_];
+ 
+     // ONLY send a new goal if the position has changed by more than the deadband
+-    if (std::abs(current_gripper_pos - last_gripper_goal_position_) > gripper_deadband_) {
++    if (!last_gripper_goal_position_.has_value() ||
++      std::abs(current_gripper_pos - *last_gripper_goal_position_) > gripper_deadband_)
++    {
+       if (!gripper_action_client_->wait_for_action_server(std::chrono::seconds(0))) {
+         RCLCPP_WARN_ONCE(this->get_logger(), "Gripper action server is not available yet.");
+         return;
